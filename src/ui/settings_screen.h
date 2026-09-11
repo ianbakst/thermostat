@@ -2,6 +2,7 @@
 #include <lvgl.h>
 
 #include "climate/temperature.h"
+#include "net/wifi_status.h"
 
 // The settings page (portrait, 172x320):
 //
@@ -9,6 +10,11 @@
 //
 //   Units
 //   [  °F  ] [  °C  ]       current choice highlighted
+//
+//   Wi-Fi                   read-only
+//   MyNetwork
+//   192.168.1.40
+//   Signal: -55 dBm (strong)
 //
 // Unlike the pickers, choosing something doesn't close the page; only the X
 // does. Like the rest of the UI it doesn't change settings itself: a choice
@@ -24,6 +30,10 @@ class SettingsScreen {
   // Updates the highlighted unit, if the page is open.
   void showTempUnit(TempUnit unit);
 
+  // Updates the Wi-Fi section, if the page is open (and remembers the status
+  // for next time it opens).
+  void showWifiStatus(const WifiStatus& status);
+
  private:
   void selectTempUnit(TempUnit unit);
   void close();
@@ -31,7 +41,9 @@ class SettingsScreen {
   lv_obj_t* overlay_ = nullptr;
   lv_obj_t* fahrenheitButton_ = nullptr;
   lv_obj_t* celsiusButton_ = nullptr;
+  lv_obj_t* wifiLabel_ = nullptr;
   TempUnit unit_ = TempUnit::Fahrenheit;
+  WifiStatus wifiStatus_;
   OnTempUnitSelected onTempUnitSelected_ = nullptr;
   void* context_ = nullptr;
 };

@@ -11,12 +11,14 @@
 #include "climate/temperature.h"
 #include "config.h"
 #include "display/display.h"
+#include "net/wifi_connection.h"
 #include "storage/settings_store.h"
 #include "ui/ui.h"
 
 static Display display;
 static Ui ui;
 static SettingsStore settingsStore;
+static WifiConnection wifi;
 
 // The panel's own settings, loaded from flash at startup.
 static TempUnit tempUnit = DEFAULT_TEMP_UNIT;
@@ -90,9 +92,22 @@ void setup() {
   display.begin();
   ui.begin(tempUnit, {setTargetTemp, setMode, setFanMode, setTempUnit});
   ui.show(climate);
+
+  // Connects in the background; the UI is already up and responsive.
+  wifi.begin();
 }
 
 void loop() {
+  const unsigned long now = millis();
+
+  // Refresh the Wi-Fi status on the settings page when the connection comes
+  // or goes, and every few seconds so the signal strength stays current.
+  static unsigned long lastWifiStatusMs = 0;
+  if (wifi.tick(now) || now - lastWifiStatusMs >= WIFI_STATUS_REFRESH_MS) {
+    lastWifiStatusMs = now;
+    ui.showWifiStatus(wifi.status());
+  }
+
   display.tick();
   delay(LVGL_LOOP_DELAY_MS);
 }

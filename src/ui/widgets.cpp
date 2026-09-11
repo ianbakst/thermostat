@@ -9,14 +9,6 @@ lv_obj_t* createFlatButton(lv_obj_t* parent, int32_t w, int32_t h) {
   lv_obj_set_style_radius(button, 10, 0);
   lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
   lv_obj_set_style_bg_color(button, buttonColor(), 0);
-
-  // Pressed: darken whatever color the button currently is.
-  lv_obj_set_style_color_filter_dsc(button, &lv_color_filter_shade, LV_STATE_PRESSED);
-  lv_obj_set_style_color_filter_opa(button, LV_OPA_30, LV_STATE_PRESSED);
-
-  // Disabled: fade out.
-  lv_obj_set_style_bg_opa(button, LV_OPA_40, LV_STATE_DISABLED);
-  lv_obj_set_style_text_opa(button, LV_OPA_40, LV_STATE_DISABLED);
   return button;
 }
 

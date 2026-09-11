@@ -11,3 +11,6 @@
 
 # OS
 .DS_Store
+
+# Wi-Fi password etc. (copy include/secrets.example.h to create it)
+include/secrets.h

@@ -20,6 +20,26 @@ static Arduino_ST7789 panel(&bus, TFT_RST_PIN, DISPLAY_ROTATION, true /* ips */,
 static Axs5106l touch;
 static bool touchOk = false;
 
+// Sleep: after DISPLAY_SLEEP_TIMEOUT_MS without a touch the backlight turns
+// off. LVGL keeps running, so the screen is up to date when it wakes.
+static uint8_t awakeBrightness = 255;
+static bool asleep = false;
+// Set when a touch wakes the display: that touch is hidden from LVGL until
+// the finger lifts, so waking can't press whatever was under it.
+static bool ignoreUntilRelease = false;
+
+static void sleepDisplay() {
+  asleep = true;
+  ledcWrite(TFT_BL_PIN, 0);
+  Serial.println("Display: sleep");
+}
+
+static void wakeDisplay() {
+  asleep = false;
+  ledcWrite(TFT_BL_PIN, awakeBrightness);
+  Serial.println("Display: wake");
+}
+
 // LVGL draws into this buffer in strips, then flushCb copies each strip to
 // the panel. A tenth of the screen is the usual size/speed tradeoff.
 static uint8_t drawBuf[TFT_PANEL_WIDTH * TFT_PANEL_HEIGHT / 10 * 2];  // RGB565 = 2 bytes/px
@@ -34,9 +54,28 @@ static void flushCb(lv_display_t* disp, const lv_area_t* area, uint8_t* pxMap) {
   lv_display_flush_ready(disp);
 }
 
-static void touchReadCb(lv_indev_t*, lv_indev_data_t* data) {
+static void touchReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
   int32_t x, y;
-  if (touchOk && touch.read(x, y)) {
+  const bool touching = touchOk && touch.read(x, y);
+
+  if (touching && asleep) {
+    wakeDisplay();
+    ignoreUntilRelease = true;
+  }
+
+  if (ignoreUntilRelease) {
+    if (touching) {
+      // LVGL only counts reported presses as activity, so tell it directly
+      // that someone is here; otherwise it would go straight back to sleep.
+      lv_display_trigger_activity(lv_indev_get_display(indev));
+    } else {
+      ignoreUntilRelease = false;
+    }
+    data->state = LV_INDEV_STATE_RELEASED;
+    return;
+  }
+
+  if (touching) {
     data->point.x = x;
     data->point.y = y;
     data->state = LV_INDEV_STATE_PRESSED;
@@ -79,6 +118,16 @@ void Display::begin() {
   Serial.printf("Display: %dx%d, rotation %d\n", width, height, DISPLAY_ROTATION);
 }
 
-void Display::tick() { lv_timer_handler(); }
+void Display::tick() {
+  lv_timer_handler();
 
-void Display::setBrightness(uint8_t level) { ledcWrite(TFT_BL_PIN, level); }
+  // Time since the last touch, as tracked by LVGL.
+  if (!asleep && lv_display_get_inactive_time(nullptr) >= DISPLAY_SLEEP_TIMEOUT_MS) {
+    sleepDisplay();
+  }
+}
+
+void Display::setBrightness(uint8_t level) {
+  awakeBrightness = level;
+  if (!asleep) ledcWrite(TFT_BL_PIN, level);
+}

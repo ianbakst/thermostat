@@ -23,6 +23,10 @@
 #define TFT_COL_OFFSET    34       // the 172px panel sits in the middle of
                                    // the controller's 240px-wide address space
 
+// Backlight turns off after this long without a touch; a tap wakes it
+// (that tap doesn't press anything).
+#define DISPLAY_SLEEP_TIMEOUT_MS 15000UL
+
 // 0 = portrait (USB at the bottom, as in Waveshare's demos), 1-3 rotate in
 // 90° steps. Only 0 has been confirmed on this board so far.
 #define DISPLAY_ROTATION  0
@@ -62,6 +66,14 @@
 #define TARGET_TEMP_MAX_C     31.0f
 
 // ---------------------------------------------------------------------------
+// Wi-Fi (network name and password live in include/secrets.h, not in git)
+// ---------------------------------------------------------------------------
+#define WIFI_HOSTNAME          "thermostat"  // name shown in your router's device list
+#define WIFI_RETRY_INTERVAL_MS 30000UL       // start a fresh attempt after this long offline
+#define WIFI_STATUS_REFRESH_MS 5000UL        // how often the settings page's signal updates
+
+// ---------------------------------------------------------------------------
 // Timing
 // ---------------------------------------------------------------------------
 #define LVGL_LOOP_DELAY_MS 5UL
+#define PICKER_TIMEOUT_MS  10000UL  // mode/fan pickers close if nothing is chosen

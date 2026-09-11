@@ -53,6 +53,8 @@ platformio.ini            board, platform, libraries, build flags
 include/
   config.h                on-board pin assignments and timing
   lv_conf.h               LVGL options (fonts, memory, logging)
+  secrets.example.h       template for secrets.h (Wi-Fi name/password)
+  secrets.h               your copy; NOT in git
 src/
   main.cpp                wiring + loop only
   display/
@@ -63,6 +65,9 @@ src/
   climate/
     climate.h/.cpp        ClimateState: one mini-split's mode, fan, temps
     temperature.h/.cpp    °F/°C conversion, setpoint stepping, formatting
+  net/
+    wifi_connection.h/.cpp connects and stays connected to Wi-Fi
+    wifi_status.h         connection snapshot the UI can display
   storage/
     settings_store.h/.cpp panel settings saved in flash (NVS)
   ui/
@@ -70,23 +75,32 @@ src/
     picker.h/.cpp         full-screen option grid (mode, fan)
     settings_screen.h/.cpp settings page (units)
     widgets.h/.cpp        shared flat button, overlay + icon helpers
-    icons/                GENERATED icon font + ICON_* names (see below)
+    fonts/                GENERATED icon fonts, temperature font, fonts.h (see below)
 tools/
-  generate_icons.py       regenerates src/ui/icons/ from Material Design Icons
+  generate_fonts.py       regenerates src/ui/fonts/
 hardware/                 enclosure, mounting notes
 ```
 
-### Icons
+### Fonts
 
-Icons come from [Material Design Icons](https://pictogrammers.com/library/mdi/),
-the set Home Assistant uses (Apache 2.0). LVGL can't load icon files at
-runtime, so `tools/generate_icons.py` converts just the icons we use into
-LVGL fonts (`src/ui/icons/mdi_icons_<size>.c`, one per size) and writes
-`icons.h` with an `ICON_*` name for each. To add or change one, edit the `ICONS` list in the
-script and run it from the project root (needs Node.js):
+LVGL can't load font files at runtime, so fonts are compiled in as C files of
+pre-rendered glyphs. `tools/generate_fonts.py` builds the custom ones in
+`src/ui/fonts/` with LVGL's `lv_font_conv`, including only the glyphs we use:
+
+- **Icons** (`mdi_icons_24/32/40`): [Material Design Icons](https://pictogrammers.com/library/mdi/),
+  the set Home Assistant uses (Apache 2.0). `fonts.h` has an `ICON_*` name
+  for each. To add one, edit the `ICONS` list in the script.
+- **Target temperature** (`temperature_48`): Montserrat 48px (the typeface of
+  LVGL's built-in fonts, SIL OFL 1.1) with only `0-9 . ° F C`. That's ~6KB
+  instead of ~97KB for LVGL's full built-in 48px font. Any other character
+  (like the `--` shown while the target is unknown) falls back to
+  `lv_font_montserrat_20`.
+
+The text fonts at 14px and 20px are LVGL's built-ins, enabled in
+`include/lv_conf.h`. Run the script from the project root (needs Node.js):
 
 ```bash
-python3 tools/generate_icons.py
+python3 tools/generate_fonts.py
 ```
 
 How it fits together:
@@ -115,20 +129,23 @@ Built one step at a time:
    Responsiveness tuning: flat widget styles (no shadows or animated
    transitions), 16ms touch/refresh period, `-O2`, 80MHz SPI. The FPS/CPU
    overlay is toggled with `LV_USE_PERF_MONITOR` in `lv_conf.h`.
-2. **Thermostat screen** ← *current*: one mini-split, portrait layout.
+2. **Thermostat screen** ✓ One mini-split, portrait layout.
    - Top-left: settings button. Opens the settings page: units (°F / °C),
      saved in flash. Choosing doesn't close the page; the X in its top-left
      corner does. Switching units rounds the target to the nearest 1°F or
      0.5°C.
-   - Top-right: current temperature with its unit (e.g. 72°F).
+   - Top center: current temperature with its unit (e.g. 72°F).
    - Center: target temperature, with triangle arrows above (up) and below
      (down). Faded and locked in Off and Fan modes, where it doesn't apply.
-   - Bottom-left: mode button. Its icon and color show the current mode (Off,
-     Heat, Cool, Auto, Dry, Fan).
+   - Bottom-left: mode button. Its icon shows the current mode (Off, Heat,
+     Cool, Auto, Dry, Fan), and the whole background takes on the mode's
+     color (black for Off). Buttons are translucent so they suit any
+     background.
    - Bottom-right: fan button. Its icon shows the current fan mode (Low,
      Medium, High, Auto, Off, Ambient).
    - Tapping either opens a full-screen picker; tapping an option selects it
-     and closes the picker.
+     and closes the picker. If nothing is chosen within 10 seconds
+     (`PICKER_TIMEOUT_MS`), the picker closes without changing anything.
 
    Data is placeholder (71° indoor, 70° target, Heat). Taps change it on the
    device and are logged to the serial monitor.
@@ -136,8 +153,29 @@ Built one step at a time:
    Touch is interrupt-driven: the driver only reads the controller after it
    signals a new report on its INT pin. Polling it constantly made it stop
    answering after about a minute.
-3. **Wi-Fi**: connect and reconnect, with credentials kept out of git.
+3. **Wi-Fi** ← *current*: connect and stay connected.
+   - **Setup:** copy `include/secrets.example.h` to `include/secrets.h` and
+     fill in your network name and password (2.4GHz). `secrets.h` is in
+     `.gitignore`; without it the build stops with a message saying so.
+   - Connects in the background at startup; the UI is usable immediately.
+   - The Arduino core reconnects by itself after most drops. Because it gives
+     up on a few failures (e.g. `AUTH_FAIL`, which some routers report after
+     rebooting), the panel also starts a fresh attempt after 30s offline
+     (`WIFI_RETRY_INTERVAL_MS`).
+   - Hostname `thermostat` (`WIFI_HOSTNAME`), so it's easy to find in your
+     router's device list.
+   - Top-right Wi-Fi icon, like a phone's: 1-4 bars when connected (-60 /
+     -70 / -80 dBm thresholds, `signalBars()` in `net/wifi_status.h`), or a
+     crossed-out icon when not. Updates every 5s.
+   - Settings page shows the network, IP address and signal strength (with
+     the same thresholds: strong / good / weak / very weak).
+   - Serial log: `Wi-Fi: connected, IP ..., signal ... dBm`; failures show the
+     core's `Reason: ...` line (e.g. `201 - NO_AP_FOUND` = network name not
+     found, `15 - 4WAY_HANDSHAKE_TIMEOUT` = usually a wrong password).
 4. **MQTT ↔ Home Assistant**: show the mini-splits' real state and send
    mode/setpoint changes.
-5. **Polish**: dim/sleep the backlight, OTA updates, enclosure, and maybe a
-   local temperature sensor.
+5. **Polish**: OTA updates, enclosure, and maybe a local temperature sensor.
+   - Display sleep ✓ The backlight turns off after 15s without a touch
+     (`DISPLAY_SLEEP_TIMEOUT_MS`). The tap that wakes it is swallowed until
+     the finger lifts, so it can't press anything. Only the backlight goes
+     off; LVGL keeps the screen updated underneath, and waking is instant.

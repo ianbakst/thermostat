@@ -44,10 +44,10 @@
 // ---------------------------------------------------------------------------
 // Fonts
 // ---------------------------------------------------------------------------
-#define LV_FONT_MONTSERRAT_14 1
-#define LV_FONT_MONTSERRAT_20 1
-#define LV_FONT_MONTSERRAT_28 1
-#define LV_FONT_MONTSERRAT_48 1
+// The target temperature uses temperature_48 from src/ui/fonts/ instead of
+// LVGL's built-in 48px font: same typeface, only the characters it needs.
+#define LV_FONT_MONTSERRAT_14 1  // captions, labels, +/- signs, default
+#define LV_FONT_MONTSERRAT_20 1  // current temperature, titles; temperature_48's fallback
 #define LV_FONT_DEFAULT &lv_font_montserrat_14
 
 #endif  // LV_CONF_H

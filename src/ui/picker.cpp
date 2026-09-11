@@ -2,7 +2,8 @@
 
 #include <cstdint>
 
-#include "ui/icons/icons.h"
+#include "config.h"
+#include "ui/fonts/fonts.h"
 #include "ui/widgets.h"
 
 // Layout for the 172x320 screen: title, then a 2-column grid of tiles.
@@ -55,14 +56,29 @@ void Picker::open(const char* title, const PickerOption* options, int count, int
         },
         LV_EVENT_CLICKED, this);
   }
+
+  // If nothing is chosen in time, close without changing anything. LVGL
+  // timers run from lv_timer_handler(), on the same task as the UI.
+  timeout_ = lv_timer_create(
+      [](lv_timer_t* timer) { static_cast<Picker*>(lv_timer_get_user_data(timer))->close(); },
+      PICKER_TIMEOUT_MS, this);
 }
 
 void Picker::onTileClicked(int index) {
-  // We're inside the tile's own click event, so the overlay (and the tile)
-  // can't be deleted right now. delete_async removes it on the next LVGL
-  // cycle.
+  close();
+  if (onSelect_) onSelect_(context_, index);
+}
+
+void Picker::close() {
+  if (!overlay_) return;
+
+  // This can run inside a tile's own click event, where the overlay (and the
+  // tile) can't be deleted immediately. delete_async removes it on the next
+  // LVGL cycle.
   lv_obj_delete_async(overlay_);
   overlay_ = nullptr;
 
-  if (onSelect_) onSelect_(context_, index);
+  // Deleting a timer from inside its own callback is fine in LVGL.
+  lv_timer_delete(timeout_);
+  timeout_ = nullptr;
 }

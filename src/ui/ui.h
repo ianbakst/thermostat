@@ -3,18 +3,22 @@
 
 #include "climate/climate.h"
 #include "climate/temperature.h"
+#include "net/wifi_status.h"
 #include "ui/picker.h"
 #include "ui/settings_screen.h"
 
 // The thermostat screen (portrait, 172x320):
 //
-//   [⚙]       72°F      settings, current temperature
+//   [⚙]    72°F    📶   settings, current temperature, Wi-Fi signal
 //
 //         ▲
 //        70°F           target temperature; arrows (+/-) step it
 //         ▼
 //
 //   [mode]    [fan]     icons show the current setting; tap to pick
+//
+// The background color shows the current mode (dark orange for Heat, blue
+// for Cool, ...; black for Off).
 //
 // The UI never changes the climate state itself. A tap calls one of the
 // Callbacks with what the user asked for; main.cpp decides what to do and
@@ -42,6 +46,9 @@ class Ui {
   // selection, if it's open).
   void showTempUnit(TempUnit unit);
 
+  // Shown as the top-right Wi-Fi icon and on the settings page.
+  void showWifiStatus(const WifiStatus& status);
+
  private:
   void onStep(int direction);
   void openSettings();
@@ -54,11 +61,12 @@ class Ui {
   Picker picker_;
   SettingsScreen settingsScreen_;
 
+  lv_obj_t* screen_ = nullptr;
   lv_obj_t* currentLabel_ = nullptr;
+  lv_obj_t* wifiIcon_ = nullptr;
   lv_obj_t* targetLabel_ = nullptr;
   lv_obj_t* upButton_ = nullptr;
   lv_obj_t* downButton_ = nullptr;
-  lv_obj_t* modeButton_ = nullptr;
   lv_obj_t* modeIcon_ = nullptr;
   lv_obj_t* fanIcon_ = nullptr;
 };

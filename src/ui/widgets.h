@@ -10,8 +10,8 @@ lv_color_t buttonColor();
 //
 // Styles are set by hand instead of using LVGL's default theme: its shadows,
 // grow-on-press and animated transitions made presses feel laggy on this
-// chip (see step 1 in the README). Pressed darkens the button; disabled fades
-// it and LVGL ignores taps on it.
+// chip (see step 1 in the README). There's no pressed look: a finger covers
+// the button anyway.
 lv_obj_t* createFlatButton(lv_obj_t* parent, int32_t w, int32_t h);
 
 // A full-screen, opaque black panel on top of everything else on the active
@@ -21,5 +21,5 @@ lv_obj_t* createFlatButton(lv_obj_t* parent, int32_t w, int32_t h);
 lv_obj_t* createOverlay();
 
 // A label that shows an ICON_* in one of the icon fonts (&mdi_icons_24/32/40,
-// from ui/icons/icons.h).
+// from ui/fonts/fonts.h).
 lv_obj_t* createIcon(lv_obj_t* parent, const char* icon, const lv_font_t* font);
