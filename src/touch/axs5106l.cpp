@@ -19,11 +19,9 @@ static const unsigned long ERROR_LOG_INTERVAL_MS = 5000;
 // because it changes outside normal program flow; IRAM_ATTR keeps the handler
 // in RAM so it can run while flash is busy.
 static volatile bool reportReady = false;
-static volatile uint32_t diagInterrupts = 0;  // DIAG
 
 static void IRAM_ATTR onTouchInterrupt() {
   reportReady = true;
-  diagInterrupts = diagInterrupts + 1;  // DIAG
 }
 
 bool Axs5106l::begin(uint8_t rotation) {
@@ -60,7 +58,6 @@ bool Axs5106l::read(int32_t& x, int32_t& y) {
     uint8_t data[6] = {0};
     if (readRegister(REG_TOUCH_DATA, data, sizeof(data))) {
       lastReportMs_ = now;
-      const bool wasPressed = pressed_;
       pressed_ = (data[1] & 0x0F) > 0;
 
       if (pressed_) {
@@ -79,17 +76,6 @@ bool Axs5106l::read(int32_t& x, int32_t& y) {
           default: x_ = maxX - rawX; y_ = rawY;        break;
         }
       }
-
-      // DIAG
-      diagReports_++;
-      if (pressed_ && !wasPressed) {
-        diagDownMs_ = now;
-        diagReports_ = 1;
-        Serial.printf("[diag] down %d,%d\n", (int)x_, (int)y_);
-      } else if (!pressed_ && wasPressed) {
-        Serial.printf("[diag] up (release report) after %lums, %u reports, %u interrupts total\n",
-                      now - diagDownMs_, (unsigned)diagReports_, (unsigned)diagInterrupts);
-      }
     } else if (now - lastErrorLogMs_ >= ERROR_LOG_INTERVAL_MS) {
       lastErrorLogMs_ = now;
       Serial.println("Touch: I2C read failed");
@@ -98,9 +84,6 @@ bool Axs5106l::read(int32_t& x, int32_t& y) {
 
   if (pressed_ && now - lastReportMs_ > RELEASE_TIMEOUT_MS) {
     pressed_ = false;
-    // DIAG
-    Serial.printf("[diag] up (timeout) after %lums, %u reports, %u interrupts total\n",
-                  now - diagDownMs_, (unsigned)diagReports_, (unsigned)diagInterrupts);
   }
 
   if (pressed_) {
@@ -108,14 +91,6 @@ bool Axs5106l::read(int32_t& x, int32_t& y) {
     y = y_;
   }
   return pressed_;
-}
-
-// DIAG
-void Axs5106l::probe() {
-  uint8_t id[3] = {0};
-  const bool ok = readRegister(REG_CHIP_ID, id, sizeof(id));
-  Serial.printf("[diag] probe at t=%lus, %lus since last touch report: %s\n", millis() / 1000,
-                (millis() - lastReportMs_) / 1000, ok ? "answered" : "NO ANSWER");
 }
 
 bool Axs5106l::readRegister(uint8_t reg, uint8_t* data, uint8_t len) {

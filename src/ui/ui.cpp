@@ -1,8 +1,23 @@
 #include "ui/ui.h"
 
+#include "ui/icons/icons.h"
+#include "ui/widgets.h"
+
 // ---------------------------------------------------------------------------
-// Styling helpers
+// How each setting looks
 // ---------------------------------------------------------------------------
+
+static const char* modeIcon(HvacMode mode) {
+  switch (mode) {
+    case HvacMode::Off:     return ICON_POWER;
+    case HvacMode::Heat:    return ICON_FIRE;
+    case HvacMode::Cool:    return ICON_SNOWFLAKE;
+    case HvacMode::Auto:    return ICON_SUN_SNOWFLAKE_VARIANT;
+    case HvacMode::Dry:     return ICON_WATER_PERCENT;
+    case HvacMode::FanOnly: return ICON_FAN;
+  }
+  return ICON_POWER;
+}
 
 static lv_color_t modeColor(HvacMode mode) {
   switch (mode) {
@@ -13,43 +28,44 @@ static lv_color_t modeColor(HvacMode mode) {
     case HvacMode::FanOnly: return lv_palette_main(LV_PALETTE_BLUE_GREY);
     case HvacMode::Off:     break;
   }
-  return lv_palette_darken(LV_PALETTE_GREY, 3);
+  return lv_palette_main(LV_PALETTE_GREY);
 }
 
-static lv_obj_t* makeCaption(lv_obj_t* parent, const char* text, int32_t y) {
-  lv_obj_t* label = lv_label_create(parent);
-  lv_label_set_text(label, text);
-  lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-  lv_obj_set_style_text_color(label, lv_palette_main(LV_PALETTE_GREY), 0);
-  lv_obj_align(label, LV_ALIGN_TOP_MID, 0, y);
-  return label;
+static const char* fanIcon(FanMode fan) {
+  switch (fan) {
+    case FanMode::Low:     return ICON_FAN_SPEED_1;
+    case FanMode::Medium:  return ICON_FAN_SPEED_2;
+    case FanMode::High:    return ICON_FAN_SPEED_3;
+    case FanMode::Auto:    return ICON_FAN_AUTO;
+    case FanMode::Off:     return ICON_FAN_OFF;
+    case FanMode::Ambient: return ICON_WEATHER_WINDY;
+  }
+  return ICON_FAN_AUTO;
 }
 
-// A flat button with a label inside. The label is returned via `label`.
+// A triangle-shaped setpoint control with a black +/- inside. The icon glyph
+// is itself the tappable object, so there's no rectangular button behind it.
+// Pressed dims it; disabled fades it and LVGL ignores taps on it.
 //
-// Styles are set by hand instead of using LVGL's default theme: its shadows,
-// grow-on-press and animated transitions made presses feel laggy on this
-// chip (see step 1 in the README).
-static lv_obj_t* makeButton(lv_obj_t* parent, int32_t w, int32_t h, lv_obj_t** label) {
-  lv_obj_t* button = lv_button_create(parent);
-  lv_obj_remove_style_all(button);
-  lv_obj_set_size(button, w, h);
-  lv_obj_set_style_radius(button, 10, 0);
-  lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
-  lv_obj_set_style_bg_color(button, lv_palette_darken(LV_PALETTE_GREY, 3), 0);
+// `signOffsetY` moves the sign from the middle of the icon's box to the
+// middle of the triangle, which sits lower in an up-triangle (wide base at
+// the bottom) and higher in a down-triangle. From the 40px glyph metrics:
+// up is drawn at y 1-33 with its inner center at ~22, down at y 3-35 with
+// its inner center at ~14, in a 37px-tall box (middle at 18.5).
+static lv_obj_t* makeStepArrow(lv_obj_t* parent, const char* icon, const char* sign,
+                               int32_t signOffsetY) {
+  lv_obj_t* arrow = createIcon(parent, icon, &mdi_icons_40);
+  lv_obj_add_flag(arrow, LV_OBJ_FLAG_CLICKABLE);  // labels aren't by default
+  lv_obj_set_ext_click_area(arrow, 12);
+  lv_obj_set_style_text_color(arrow, lv_palette_main(LV_PALETTE_GREY), LV_STATE_PRESSED);
+  lv_obj_set_style_text_opa(arrow, LV_OPA_40, LV_STATE_DISABLED);
 
-  // Pressed: darken whatever color the button currently is.
-  lv_obj_set_style_color_filter_dsc(button, &lv_color_filter_shade, LV_STATE_PRESSED);
-  lv_obj_set_style_color_filter_opa(button, LV_OPA_30, LV_STATE_PRESSED);
-
-  // Disabled: fade out. LVGL also ignores taps on disabled objects.
-  lv_obj_set_style_bg_opa(button, LV_OPA_40, LV_STATE_DISABLED);
-  lv_obj_set_style_text_opa(button, LV_OPA_40, LV_STATE_DISABLED);
-
-  *label = lv_label_create(button);
-  lv_obj_set_style_text_font(*label, &lv_font_montserrat_20, 0);
-  lv_obj_center(*label);
-  return button;
+  lv_obj_t* signLabel = lv_label_create(arrow);
+  lv_label_set_text(signLabel, sign);
+  lv_obj_set_style_text_font(signLabel, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(signLabel, lv_color_black(), 0);
+  lv_obj_align(signLabel, LV_ALIGN_CENTER, 0, signOffsetY);
+  return arrow;
 }
 
 static void setEnabled(lv_obj_t* obj, bool enabled) {
@@ -64,7 +80,7 @@ static void setEnabled(lv_obj_t* obj, bool enabled) {
 // Ui
 // ---------------------------------------------------------------------------
 
-void Ui::begin(const char* name, TempUnit unit, const Callbacks& callbacks) {
+void Ui::begin(TempUnit unit, const Callbacks& callbacks) {
   unit_ = unit;
   callbacks_ = callbacks;
 
@@ -72,49 +88,65 @@ void Ui::begin(const char* name, TempUnit unit, const Callbacks& callbacks) {
   lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
   lv_obj_set_style_text_color(scr, lv_color_white(), 0);
 
-  // Positions below are y offsets from the top of the 320px-tall screen.
+  // Positions below are offsets on the 172x320 screen.
 
-  makeCaption(scr, name, 6);
+  // Top-left: settings.
+  lv_obj_t* settingsButton = createFlatButton(scr, 40, 40);
+  lv_obj_align(settingsButton, LV_ALIGN_TOP_LEFT, 8, 8);
+  lv_obj_set_ext_click_area(settingsButton, 8);
+  lv_obj_center(createIcon(settingsButton, ICON_COG, &mdi_icons_24));
+  lv_obj_add_event_cb(
+      settingsButton, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->openSettings(); },
+      LV_EVENT_CLICKED, this);
 
-  // Current temperature.
+  // Top-right: current temperature, with its unit, lined up with the
+  // settings button.
   currentLabel_ = lv_label_create(scr);
-  lv_obj_set_style_text_font(currentLabel_, &lv_font_montserrat_48, 0);
-  lv_obj_align(currentLabel_, LV_ALIGN_TOP_MID, 0, 24);
-  makeCaption(scr, "Indoor", 78);
+  lv_obj_set_style_text_font(currentLabel_, &lv_font_montserrat_20, 0);
+  lv_obj_align(currentLabel_, LV_ALIGN_TOP_RIGHT, -10, 17);
 
-  // Setpoint with -/+ on either side.
-  makeCaption(scr, "Target", 110);
+  // Center: target temperature, with up/down arrows above and below it
+  // (24px clear of the number).
   targetLabel_ = lv_label_create(scr);
-  lv_obj_set_style_text_font(targetLabel_, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_font(targetLabel_, &lv_font_montserrat_48, 0);
   lv_obj_align(targetLabel_, LV_ALIGN_TOP_MID, 0, 126);
 
-  lv_obj_t* label;
-  minusButton_ = makeButton(scr, 44, 48, &label);
-  lv_label_set_text(label, LV_SYMBOL_MINUS);
-  lv_obj_align(minusButton_, LV_ALIGN_TOP_LEFT, 6, 110);
+  upButton_ = makeStepArrow(scr, ICON_TRIANGLE, LV_SYMBOL_PLUS, 4);
+  lv_obj_align(upButton_, LV_ALIGN_TOP_MID, 0, 65);
   lv_obj_add_event_cb(
-      minusButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->onStep(-1); },
+      upButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->onStep(+1); },
       LV_EVENT_CLICKED, this);
 
-  plusButton_ = makeButton(scr, 44, 48, &label);
-  lv_label_set_text(label, LV_SYMBOL_PLUS);
-  lv_obj_align(plusButton_, LV_ALIGN_TOP_RIGHT, -6, 110);
+  downButton_ = makeStepArrow(scr, ICON_TRIANGLE_DOWN, LV_SYMBOL_MINUS, -5);
+  lv_obj_align(downButton_, LV_ALIGN_TOP_MID, 0, 202);
   lv_obj_add_event_cb(
-      plusButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->onStep(+1); },
+      downButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->onStep(-1); },
       LV_EVENT_CLICKED, this);
 
-  // Mode: tap to cycle. The button takes on the mode's color.
-  modeButton_ = makeButton(scr, 156, 52, &modeLabel_);
-  lv_obj_align(modeButton_, LV_ALIGN_TOP_MID, 0, 180);
+  // Bottom corners: mode and fan. The screen is ~0.1mm per pixel, so these
+  // small buttons also accept taps a few pixels outside their edges.
+  const int32_t cornerSize = 56;
+  const int32_t cornerMargin = 8;
+  const int32_t cornerTapSlop = 8;
+
+  // Bottom-left: mode. The button takes on the mode's color.
+  modeButton_ = createFlatButton(scr, cornerSize, cornerSize);
+  lv_obj_align(modeButton_, LV_ALIGN_BOTTOM_LEFT, cornerMargin, -cornerMargin);
+  lv_obj_set_ext_click_area(modeButton_, cornerTapSlop);
+  modeIcon_ = createIcon(modeButton_, ICON_POWER, &mdi_icons_32);
+  lv_obj_center(modeIcon_);
   lv_obj_add_event_cb(
-      modeButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->onModeTap(); },
+      modeButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->openModePicker(); },
       LV_EVENT_CLICKED, this);
 
-  // Fan speed: tap to cycle.
-  lv_obj_t* fanButton = makeButton(scr, 156, 52, &fanLabel_);
-  lv_obj_align(fanButton, LV_ALIGN_TOP_MID, 0, 246);
+  // Bottom-right: fan.
+  lv_obj_t* fanButton = createFlatButton(scr, cornerSize, cornerSize);
+  lv_obj_align(fanButton, LV_ALIGN_BOTTOM_RIGHT, -cornerMargin, -cornerMargin);
+  lv_obj_set_ext_click_area(fanButton, cornerTapSlop);
+  fanIcon_ = createIcon(fanButton, ICON_FAN_AUTO, &mdi_icons_32);
+  lv_obj_center(fanIcon_);
   lv_obj_add_event_cb(
-      fanButton, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->onFanTap(); },
+      fanButton, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->openFanPicker(); },
       LV_EVENT_CLICKED, this);
 
   show(shown_);  // placeholder "--" values until main.cpp calls show()
@@ -124,22 +156,22 @@ void Ui::show(const ClimateState& state) {
   shown_ = state;
 
   char buf[16];
-  formatTemp(buf, sizeof(buf), state.currentTempC, unit_);
+  formatTemp(buf, sizeof(buf), state.currentTempC, unit_, true /* showUnit */);
   lv_label_set_text(currentLabel_, buf);
 
-  formatTemp(buf, sizeof(buf), state.targetTempC, unit_);
+  formatTemp(buf, sizeof(buf), state.targetTempC, unit_, true /* showUnit */);
   lv_label_set_text(targetLabel_, buf);
 
-  // The setpoint doesn't apply in Off or Fan mode: fade it and lock -/+.
+  // The setpoint doesn't apply in Off or Fan mode: fade it and lock the arrows.
   const bool adjustable = usesTargetTemp(state.mode);
   lv_obj_set_style_text_opa(targetLabel_, adjustable ? LV_OPA_COVER : LV_OPA_40, 0);
-  setEnabled(minusButton_, adjustable);
-  setEnabled(plusButton_, adjustable);
+  setEnabled(upButton_, adjustable);
+  setEnabled(downButton_, adjustable);
 
-  lv_label_set_text_fmt(modeLabel_, "Mode: %s", modeName(state.mode));
+  lv_label_set_text(modeIcon_, modeIcon(state.mode));
   lv_obj_set_style_bg_color(modeButton_, modeColor(state.mode), 0);
 
-  lv_label_set_text_fmt(fanLabel_, "Fan: %s", fanSpeedName(state.fan));
+  lv_label_set_text(fanIcon_, fanIcon(state.fan));
 }
 
 void Ui::onStep(int direction) {
@@ -149,6 +181,43 @@ void Ui::onStep(int direction) {
   if (next != shown_.targetTempC) callbacks_.setTargetTemp(next);
 }
 
-void Ui::onModeTap() { callbacks_.setMode(nextMode(shown_.mode)); }
+void Ui::showTempUnit(TempUnit unit) {
+  unit_ = unit;
+  show(shown_);
+  settingsScreen_.showTempUnit(unit);
+}
 
-void Ui::onFanTap() { callbacks_.setFanSpeed(nextFanSpeed(shown_.fan)); }
+void Ui::openSettings() {
+  settingsScreen_.open(
+      unit_,
+      [](void* context, TempUnit unit) { static_cast<Ui*>(context)->callbacks_.setTempUnit(unit); },
+      this);
+}
+
+void Ui::openModePicker() {
+  PickerOption options[HVAC_MODE_COUNT];
+  for (int i = 0; i < HVAC_MODE_COUNT; i++) {
+    const auto mode = static_cast<HvacMode>(i);
+    options[i] = {modeIcon(mode), modeName(mode), modeColor(mode)};
+  }
+  picker_.open(
+      "Mode", options, HVAC_MODE_COUNT, static_cast<int>(shown_.mode),
+      [](void* context, int index) {
+        static_cast<Ui*>(context)->callbacks_.setMode(static_cast<HvacMode>(index));
+      },
+      this);
+}
+
+void Ui::openFanPicker() {
+  PickerOption options[FAN_MODE_COUNT];
+  for (int i = 0; i < FAN_MODE_COUNT; i++) {
+    const auto fan = static_cast<FanMode>(i);
+    options[i] = {fanIcon(fan), fanModeName(fan), lv_palette_main(LV_PALETTE_BLUE)};
+  }
+  picker_.open(
+      "Fan", options, FAN_MODE_COUNT, static_cast<int>(shown_.fan),
+      [](void* context, int index) {
+        static_cast<Ui*>(context)->callbacks_.setFanMode(static_cast<FanMode>(index));
+      },
+      this);
+}

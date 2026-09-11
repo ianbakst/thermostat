@@ -8,6 +8,9 @@
 
 enum class TempUnit : uint8_t { Fahrenheit, Celsius };
 
+// "°F" or "°C".
+const char* tempUnitSymbol(TempUnit unit);
+
 float fahrenheitToCelsius(float f);
 float celsiusToFahrenheit(float c);
 
@@ -20,6 +23,10 @@ float fromDisplayUnit(float value, TempUnit unit);
 // unit, and clamped to TARGET_TEMP_MIN_C..TARGET_TEMP_MAX_C.
 float stepTargetTemp(float targetC, int direction, TempUnit unit);
 
-// Writes e.g. "72°" (°F, whole degrees) or "21.5°" (°C, one decimal).
-// Unknown (NAN) temperatures show as "--°".
-void formatTemp(char* buf, size_t len, float celsius, TempUnit unit);
+// Rounds a setpoint to the nearest whole step in `unit` (1°F or 0.5°C),
+// within the setpoint limits. E.g. 70°F (21.11°C) in °C becomes 21.0°C.
+float roundTargetTemp(float targetC, TempUnit unit);
+
+// Writes e.g. "72°" (°F, whole degrees) or "21.5°" (°C, one decimal), or
+// "72°F" / "21.5°C" with showUnit. Unknown (NAN) temperatures show as "--°".
+void formatTemp(char* buf, size_t len, float celsius, TempUnit unit, bool showUnit = false);

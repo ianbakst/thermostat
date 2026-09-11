@@ -24,12 +24,7 @@ static bool touchOk = false;
 // the panel. A tenth of the screen is the usual size/speed tradeoff.
 static uint8_t drawBuf[TFT_PANEL_WIDTH * TFT_PANEL_HEIGHT / 10 * 2];  // RGB565 = 2 bytes/px
 
-// ---- TEMPORARY DIAGNOSTICS -------------------------------------------------
-static uint32_t diagFlushes = 0;
-// ---------------------------------------------------------------------------
-
 static void flushCb(lv_display_t* disp, const lv_area_t* area, uint8_t* pxMap) {
-  diagFlushes++;  // DIAG
   const int32_t w = lv_area_get_width(area);
   const int32_t h = lv_area_get_height(area);
   // LVGL's RGB565 buffer is native-endian uint16, which is what
@@ -84,21 +79,6 @@ void Display::begin() {
   Serial.printf("Display: %dx%d, rotation %d\n", width, height, DISPLAY_ROTATION);
 }
 
-void Display::tick() {
-  lv_timer_handler();
-  // DIAG: heartbeat
-  static unsigned long lastBeat = 0;
-  if (millis() - lastBeat >= 2000) {
-    lastBeat = millis();
-    Serial.printf("[diag] alive t=%lu flushes=%u\n", lastBeat, (unsigned)diagFlushes);
-    diagFlushes = 0;
-  }
-  // DIAG: every 30s, check whether the touch controller answers I2C.
-  static unsigned long lastProbe = 0;
-  if (touchOk && millis() - lastProbe >= 30000) {
-    lastProbe = millis();
-    touch.probe();
-  }
-}
+void Display::tick() { lv_timer_handler(); }
 
 void Display::setBrightness(uint8_t level) { ledcWrite(TFT_BL_PIN, level); }

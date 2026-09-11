@@ -8,9 +8,9 @@
 // top-left of what you see.
 //
 // The controller pulls its INT pin low whenever it has a new touch report.
-// We only talk to it over I2C after that happens: when nobody has touched it
-// for a while it goes to sleep and stops answering I2C, so polling it
-// constantly just produces errors.
+// We only talk to it over I2C after that happens. Polling it constantly
+// instead (60 reads/s) made it stop answering I2C after a minute or so, and
+// touch died until reboot.
 class Axs5106l {
  public:
   // Resets the controller and checks it answers on I2C. Returns false if it
@@ -21,10 +21,6 @@ class Axs5106l {
   // finger is down.
   bool read(int32_t& x, int32_t& y);
 
-  // TEMPORARY DIAGNOSTIC: tries an I2C read without waiting for INT and logs
-  // whether the controller answered.
-  void probe();
-
  private:
   bool readRegister(uint8_t reg, uint8_t* data, uint8_t len);
 
@@ -34,8 +30,4 @@ class Axs5106l {
   int32_t y_ = 0;
   unsigned long lastReportMs_ = 0;
   unsigned long lastErrorLogMs_ = 0;
-
-  // DIAG
-  unsigned long diagDownMs_ = 0;
-  uint32_t diagReports_ = 0;
 };

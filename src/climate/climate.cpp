@@ -12,24 +12,16 @@ const char* modeName(HvacMode mode) {
   return "?";
 }
 
-const char* fanSpeedName(FanSpeed fan) {
+const char* fanModeName(FanMode fan) {
   switch (fan) {
-    case FanSpeed::Auto:   return "Auto";
-    case FanSpeed::Low:    return "Low";
-    case FanSpeed::Medium: return "Medium";
-    case FanSpeed::High:   return "High";
+    case FanMode::Low:     return "Low";
+    case FanMode::Medium:  return "Medium";
+    case FanMode::High:    return "High";
+    case FanMode::Auto:    return "Auto";
+    case FanMode::Off:     return "Off";
+    case FanMode::Ambient: return "Ambient";
   }
   return "?";
-}
-
-HvacMode nextMode(HvacMode mode) {
-  const int count = static_cast<int>(HvacMode::FanOnly) + 1;
-  return static_cast<HvacMode>((static_cast<int>(mode) + 1) % count);
-}
-
-FanSpeed nextFanSpeed(FanSpeed fan) {
-  const int count = static_cast<int>(FanSpeed::High) + 1;
-  return static_cast<FanSpeed>((static_cast<int>(fan) + 1) % count);
 }
 
 bool usesTargetTemp(HvacMode mode) {

@@ -50,12 +50,10 @@
 // ---------------------------------------------------------------------------
 // Thermostat
 // ---------------------------------------------------------------------------
-// The mini-split this panel controls. Only one for now; the name is shown at
-// the top of the screen.
-#define DEFAULT_CLIMATE_NAME  "Mini-split"
-
-// TempUnit::Fahrenheit or TempUnit::Celsius. Temperatures are stored in °C;
-// this only changes what's displayed and the +/- step (1°F or 0.5°C).
+// TempUnit::Fahrenheit or TempUnit::Celsius: the unit used until one is
+// chosen on the settings page (that choice is saved in flash and wins from
+// then on). Temperatures are stored in °C; the unit only changes what's
+// displayed and the +/- step (1°F or 0.5°C).
 #define DEFAULT_TEMP_UNIT     TempUnit::Fahrenheit
 
 // Setpoint limits. Typical mini-split range (~61-88°F); Home Assistant

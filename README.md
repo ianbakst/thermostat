@@ -63,9 +63,30 @@ src/
   climate/
     climate.h/.cpp        ClimateState: one mini-split's mode, fan, temps
     temperature.h/.cpp    °F/°C conversion, setpoint stepping, formatting
+  storage/
+    settings_store.h/.cpp panel settings saved in flash (NVS)
   ui/
     ui.h/.cpp             LVGL thermostat screen
+    picker.h/.cpp         full-screen option grid (mode, fan)
+    settings_screen.h/.cpp settings page (units)
+    widgets.h/.cpp        shared flat button, overlay + icon helpers
+    icons/                GENERATED icon font + ICON_* names (see below)
+tools/
+  generate_icons.py       regenerates src/ui/icons/ from Material Design Icons
 hardware/                 enclosure, mounting notes
+```
+
+### Icons
+
+Icons come from [Material Design Icons](https://pictogrammers.com/library/mdi/),
+the set Home Assistant uses (Apache 2.0). LVGL can't load icon files at
+runtime, so `tools/generate_icons.py` converts just the icons we use into
+LVGL fonts (`src/ui/icons/mdi_icons_<size>.c`, one per size) and writes
+`icons.h` with an `ICON_*` name for each. To add or change one, edit the `ICONS` list in the
+script and run it from the project root (needs Node.js):
+
+```bash
+python3 tools/generate_icons.py
 ```
 
 How it fits together:
@@ -77,11 +98,14 @@ How it fits together:
 - **State flows one way.** `main.cpp` owns the `ClimateState` and hands it to
   `Ui::show()` to draw. When you tap a control, the UI doesn't change the
   state itself. It calls back into `main.cpp` (`setTargetTemp`, `setMode`,
-  `setFanSpeed`) with what you asked for. `main.cpp` updates the state and
+  `setFanMode`) with what you asked for. `main.cpp` updates the state and
   calls `show()` again. In step 4 those callbacks send commands to Home
   Assistant instead, and `show()` runs when the mini-split reports back.
-- **Temperatures are stored in °C.** `DEFAULT_TEMP_UNIT` in `config.h` only
-  changes what's displayed and the +/- step (1°F or 0.5°C).
+  Settings work the same way: the settings page calls `setTempUnit`, and
+  `main.cpp` saves it and calls `Ui::showTempUnit()`.
+- **Temperatures are stored in °C.** The unit (chosen in Settings, saved in
+  flash; `DEFAULT_TEMP_UNIT` in `config.h` until then) only changes what's
+  displayed and the +/- step (1°F or 0.5°C).
 
 ## Roadmap
 
@@ -92,14 +116,26 @@ Built one step at a time:
    transitions), 16ms touch/refresh period, `-O2`, 80MHz SPI. The FPS/CPU
    overlay is toggled with `LV_USE_PERF_MONITOR` in `lv_conf.h`.
 2. **Thermostat screen** ← *current*: one mini-split, portrait layout.
-   - Current temperature.
-   - Setpoint with −/+. Locked in Off and Fan modes, where it doesn't apply.
-   - Mode button (tap to cycle Off → Heat → Cool → Auto → Dry → Fan), colored
-     by mode.
-   - Fan speed button (tap to cycle Auto → Low → Medium → High).
+   - Top-left: settings button. Opens the settings page: units (°F / °C),
+     saved in flash. Choosing doesn't close the page; the X in its top-left
+     corner does. Switching units rounds the target to the nearest 1°F or
+     0.5°C.
+   - Top-right: current temperature with its unit (e.g. 72°F).
+   - Center: target temperature, with triangle arrows above (up) and below
+     (down). Faded and locked in Off and Fan modes, where it doesn't apply.
+   - Bottom-left: mode button. Its icon and color show the current mode (Off,
+     Heat, Cool, Auto, Dry, Fan).
+   - Bottom-right: fan button. Its icon shows the current fan mode (Low,
+     Medium, High, Auto, Off, Ambient).
+   - Tapping either opens a full-screen picker; tapping an option selects it
+     and closes the picker.
 
    Data is placeholder (71° indoor, 70° target, Heat). Taps change it on the
    device and are logged to the serial monitor.
+
+   Touch is interrupt-driven: the driver only reads the controller after it
+   signals a new report on its INT pin. Polling it constantly made it stop
+   answering after about a minute.
 3. **Wi-Fi**: connect and reconnect, with credentials kept out of git.
 4. **MQTT ↔ Home Assistant**: show the mini-splits' real state and send
    mode/setpoint changes.
