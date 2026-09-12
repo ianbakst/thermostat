@@ -24,6 +24,7 @@ static bool touchOk = false;
 // off. LVGL keeps running, so the screen is up to date when it wakes.
 static uint8_t awakeBrightness = 255;
 static bool asleep = false;
+static bool sleepAllowed = true;
 // Set when a touch wakes the display: that touch is hidden from LVGL until
 // the finger lifts, so waking can't press whatever was under it.
 static bool ignoreUntilRelease = false;
@@ -122,9 +123,14 @@ void Display::tick() {
   lv_timer_handler();
 
   // Time since the last touch, as tracked by LVGL.
-  if (!asleep && lv_display_get_inactive_time(nullptr) >= DISPLAY_SLEEP_TIMEOUT_MS) {
+  if (sleepAllowed && !asleep && lv_display_get_inactive_time(nullptr) >= DISPLAY_SLEEP_TIMEOUT_MS) {
     sleepDisplay();
   }
+}
+
+void Display::setSleepAllowed(bool allowed) {
+  sleepAllowed = allowed;
+  if (!allowed && asleep) wakeDisplay();
 }
 
 void Display::setBrightness(uint8_t level) {

@@ -1,49 +1,70 @@
 #pragma once
 #include <lvgl.h>
+#include <cstdint>
 
-#include "climate/temperature.h"
+#include "climate/climate.h"
 #include "net/wifi_status.h"
 
-// The settings page (portrait, 172x320):
+// The settings page (portrait, 172x320). The title bar stays put and
+// everything below it scrolls, because there's more here than fits:
 //
 //   [X] Settings            X closes the page
+//   - - - - - - - - - - -   scrolls below here
+//   Screen Brightness
+//   [==========|-------]    backlight, live as you drag
 //
-//   Units
-//   [  °F  ] [  °C  ]       current choice highlighted
-//
-//   Wi-Fi                   read-only
+//   Wi-Fi
 //   MyNetwork
 //   192.168.1.40
 //   Signal: -55 dBm (strong)
+//   [ Wi-Fi setup ]         the panel's own setup network, from step 1
 //
-// Unlike the pickers, choosing something doesn't close the page; only the X
-// does. Like the rest of the UI it doesn't change settings itself: a choice
-// calls back to the owner, who applies it and calls showTempUnit().
+//   MQTT
+//   homeassistant.local:1883
+//   Connected
+//   [ MQTT setup ]          broker settings only; needs Wi-Fi, so it's
+//                           greyed out without it
+//   Mini-split
+//   OfficeHVAC
+//   Online
+//   [ Change ]              pick from the units Home Assistant advertises
 //
-// The page is built when opened and deleted when closed.
+// The page is built when opened and deleted when closed. While it's closed it
+// just remembers the latest status to show next time. Like the rest of the UI
+// it does nothing itself: the buttons and the slider call back to the owner.
 class SettingsScreen {
  public:
-  using OnTempUnitSelected = void (*)(void* context, TempUnit unit);
+  struct Callbacks {
+    void (*startWifiSetup)(void* context);
+    void (*startBrokerSetup)(void* context);
+    void (*openUnitList)(void* context);
+    // While dragging, `save` is false: the brightness follows the slider but
+    // isn't written to flash until the finger lifts.
+    void (*setBrightness)(void* context, uint8_t value, bool save);
+  };
 
-  void open(TempUnit unit, OnTempUnitSelected onTempUnitSelected, void* context);
+  void open(const Callbacks& callbacks, void* context, uint8_t brightness);
 
-  // Updates the highlighted unit, if the page is open.
-  void showTempUnit(TempUnit unit);
-
-  // Updates the Wi-Fi section, if the page is open (and remembers the status
-  // for next time it opens).
   void showWifiStatus(const WifiStatus& status);
+  void showMqtt(const char* broker, bool connected, bool loginRefused);
+  void showClimate(ClimateLink link, const char* unitName);
 
  private:
-  void selectTempUnit(TempUnit unit);
   void close();
 
   lv_obj_t* overlay_ = nullptr;
-  lv_obj_t* fahrenheitButton_ = nullptr;
-  lv_obj_t* celsiusButton_ = nullptr;
   lv_obj_t* wifiLabel_ = nullptr;
-  TempUnit unit_ = TempUnit::Fahrenheit;
+  lv_obj_t* mqttLabel_ = nullptr;
+  lv_obj_t* mqttButton_ = nullptr;
+  lv_obj_t* climateLabel_ = nullptr;
+
   WifiStatus wifiStatus_;
-  OnTempUnitSelected onTempUnitSelected_ = nullptr;
+  char broker_[80] = "";
+  bool mqttConnected_ = false;
+  bool mqttLoginRefused_ = false;
+  ClimateLink climateLink_ = ClimateLink::NoUnit;
+  char unitName_[33] = "";
+
+  Callbacks callbacks_{};
   void* context_ = nullptr;
 };

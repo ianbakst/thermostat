@@ -50,4 +50,10 @@
 #define LV_FONT_MONTSERRAT_20 1  // current temperature, titles; temperature_48's fallback
 #define LV_FONT_DEFAULT &lv_font_montserrat_14
 
+// ---------------------------------------------------------------------------
+// Extras
+// ---------------------------------------------------------------------------
+// QR code widget, for the setup screen's "join this network" code.
+#define LV_USE_QRCODE 1
+
 #endif  // LV_CONF_H

@@ -36,21 +36,40 @@ static lv_palette_t modePalette(HvacMode mode) {
 // Bright version, for icons and highlights in the mode picker.
 static lv_color_t modeColor(HvacMode mode) { return lv_palette_main(modePalette(mode)); }
 
-// Darker version for the whole screen's background, so white text stays
-// readable. Off is plain black.
-static lv_color_t modeBackground(HvacMode mode) {
-  if (mode == HvacMode::Off) return lv_color_black();
-  return lv_palette_darken(modePalette(mode), 3);
+// The whole screen's background. Heat, Cool and Dry also show whether the
+// unit is running: a bright color while it's heating/cooling/drying, a much
+// darker one once it's idle. The idle colors are half the brightness of
+// LVGL's darkest red/blue/teal, so they can't be mistaken for the running
+// ones, but still clearly colored rather than Off's black. Other modes use a
+// dark version of their color. All are dark enough for white text.
+static lv_color_t modeBackground(HvacMode mode, HvacAction action) {
+  switch (mode) {
+    case HvacMode::Heat:
+      return action == HvacAction::Heating ? lv_palette_darken(LV_PALETTE_ORANGE, 3)  // orange #E65100
+                                           : lv_color_hex(0x5C0E0E);                  // dark red
+    case HvacMode::Cool:
+      return action == HvacAction::Cooling ? lv_palette_darken(LV_PALETTE_BLUE, 2)    // blue #1976D2
+                                           : lv_color_hex(0x062450);                  // deep blue
+    case HvacMode::Dry:
+      return action == HvacAction::Drying ? lv_palette_darken(LV_PALETTE_TEAL, 2)     // teal #00796B
+                                          : lv_color_hex(0x002620);                   // dark teal
+    case HvacMode::Off:
+      return lv_color_black();
+    default:
+      return lv_palette_darken(modePalette(mode), 3);
+  }
 }
 
+// The unit has 4 speeds plus Quiet, but MDI only has fan-speed-1 to 3, so
+// Quiet and High are a fan with a down/up chevron.
 static const char* fanIcon(FanMode fan) {
   switch (fan) {
-    case FanMode::Low:     return ICON_FAN_SPEED_1;
-    case FanMode::Medium:  return ICON_FAN_SPEED_2;
-    case FanMode::High:    return ICON_FAN_SPEED_3;
-    case FanMode::Auto:    return ICON_FAN_AUTO;
-    case FanMode::Off:     return ICON_FAN_OFF;
-    case FanMode::Ambient: return ICON_WEATHER_WINDY;
+    case FanMode::Auto:   return ICON_FAN_AUTO;
+    case FanMode::Quiet:  return ICON_FAN_CHEVRON_DOWN;
+    case FanMode::Low:    return ICON_FAN_SPEED_1;
+    case FanMode::Middle: return ICON_FAN_SPEED_2;
+    case FanMode::Medium: return ICON_FAN_SPEED_3;
+    case FanMode::High:   return ICON_FAN_CHEVRON_UP;
   }
   return ICON_FAN_AUTO;
 }
@@ -89,12 +108,27 @@ static lv_obj_t* makeStepArrow(lv_obj_t* parent, const char* icon, const char* s
   return arrow;
 }
 
-// The main screen's background changes color with the mode, so its buttons
-// can't have a fixed color that suits every background. Instead they're
-// translucent white: a lighter tint of whatever color is behind them.
-static void tintButton(lv_obj_t* button) {
+// A bottom-corner button (mode, fan) showing an icon. The main screen's
+// background changes color with the mode, so the button can't have a fixed
+// color that suits every background. Instead it's translucent white: a
+// lighter tint of whatever color is behind it. Disabled fades it, icon and
+// all.
+static lv_obj_t* makeCornerButton(lv_obj_t* parent, lv_align_t align, lv_obj_t** icon) {
+  const int32_t size = 56;
+  const int32_t margin = 8;
+
+  lv_obj_t* button = createFlatButton(parent, size, size);
   lv_obj_set_style_bg_color(button, lv_color_white(), 0);
   lv_obj_set_style_bg_opa(button, LV_OPA_20, 0);
+  lv_obj_set_style_opa(button, LV_OPA_40, LV_STATE_DISABLED);
+  lv_obj_align(button, align, align == LV_ALIGN_BOTTOM_LEFT ? margin : -margin, -margin);
+  // The screen is ~0.1mm per pixel, so these small buttons also accept taps
+  // a few pixels outside their edges.
+  lv_obj_set_ext_click_area(button, 8);
+
+  *icon = createIcon(button, "", &mdi_icons_32);
+  lv_obj_center(*icon);
+  return button;
 }
 
 static void setEnabled(lv_obj_t* obj, bool enabled) {
@@ -109,8 +143,7 @@ static void setEnabled(lv_obj_t* obj, bool enabled) {
 // Ui
 // ---------------------------------------------------------------------------
 
-void Ui::begin(TempUnit unit, const Callbacks& callbacks) {
-  unit_ = unit;
+void Ui::begin(const Callbacks& callbacks) {
   callbacks_ = callbacks;
 
   lv_obj_t* scr = lv_screen_active();
@@ -160,71 +193,101 @@ void Ui::begin(TempUnit unit, const Callbacks& callbacks) {
       downButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->onStep(-1); },
       LV_EVENT_CLICKED, this);
 
-  // Bottom corners: mode and fan. The screen is ~0.1mm per pixel, so these
-  // small buttons also accept taps a few pixels outside their edges.
-  const int32_t cornerSize = 56;
-  const int32_t cornerMargin = 8;
-  const int32_t cornerTapSlop = 8;
-
-  // Bottom-left: mode.
-  lv_obj_t* modeButton = createFlatButton(scr, cornerSize, cornerSize);
-  tintButton(modeButton);
-  lv_obj_align(modeButton, LV_ALIGN_BOTTOM_LEFT, cornerMargin, -cornerMargin);
-  lv_obj_set_ext_click_area(modeButton, cornerTapSlop);
-  modeIcon_ = createIcon(modeButton, ICON_POWER, &mdi_icons_32);
-  lv_obj_center(modeIcon_);
+  // Bottom corners: mode (left) and fan (right).
+  modeButton_ = makeCornerButton(scr, LV_ALIGN_BOTTOM_LEFT, &modeIcon_);
   lv_obj_add_event_cb(
-      modeButton, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->openModePicker(); },
+      modeButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->openModePicker(); },
       LV_EVENT_CLICKED, this);
 
-  // Bottom-right: fan.
-  lv_obj_t* fanButton = createFlatButton(scr, cornerSize, cornerSize);
-  tintButton(fanButton);
-  lv_obj_align(fanButton, LV_ALIGN_BOTTOM_RIGHT, -cornerMargin, -cornerMargin);
-  lv_obj_set_ext_click_area(fanButton, cornerTapSlop);
-  fanIcon_ = createIcon(fanButton, ICON_FAN_AUTO, &mdi_icons_32);
-  lv_obj_center(fanIcon_);
+  fanButton_ = makeCornerButton(scr, LV_ALIGN_BOTTOM_RIGHT, &fanIcon_);
   lv_obj_add_event_cb(
-      fanButton, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->openFanPicker(); },
+      fanButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->openFanPicker(); },
       LV_EVENT_CLICKED, this);
 
-  show(shown_);  // placeholder "--" values until main.cpp calls show()
+  show(shown_);  // "--" and locked until the mini-split reports in
 }
 
 void Ui::show(const ClimateState& state) {
   shown_ = state;
 
-  char buf[16];
-  formatTemp(buf, sizeof(buf), state.currentTempC, unit_, true /* showUnit */);
-  lv_label_set_text(currentLabel_, buf);
+  // Until the mini-split is online, the last known values stay on screen
+  // but faded, and nothing can be tapped.
+  const bool online = state.link == ClimateLink::Online;
 
-  formatTemp(buf, sizeof(buf), state.targetTempC, unit_, true /* showUnit */);
+  char buf[16];
+  formatTemp(buf, sizeof(buf), state.currentTemp, state.unit, state.tempStep);
+  lv_label_set_text(currentLabel_, buf);
+  lv_obj_set_style_text_opa(currentLabel_, online ? LV_OPA_COVER : LV_OPA_40, 0);
+
+  formatTemp(buf, sizeof(buf), state.targetTemp, state.unit, state.tempStep);
   lv_label_set_text(targetLabel_, buf);
 
-  // The setpoint doesn't apply in Off or Fan mode: fade it and lock the arrows.
-  const bool adjustable = usesTargetTemp(state.mode);
+  // The setpoint also doesn't apply in Off, Dry or Fan mode.
+  const bool adjustable = online && usesTargetTemp(state.mode);
   lv_obj_set_style_text_opa(targetLabel_, adjustable ? LV_OPA_COVER : LV_OPA_40, 0);
   setEnabled(upButton_, adjustable);
   setEnabled(downButton_, adjustable);
 
   // The whole background shows the mode; the mode button's icon names it.
-  lv_obj_set_style_bg_color(screen_, modeBackground(state.mode), 0);
+  lv_obj_set_style_bg_color(screen_, modeBackground(state.mode, state.action), 0);
   lv_label_set_text(modeIcon_, modeIcon(state.mode));
+  setEnabled(modeButton_, online);
 
   lv_label_set_text(fanIcon_, fanIcon(state.fan));
+  setEnabled(fanButton_, online);
+
+  settingsScreen_.showClimate(state.link, state.unitName);
+}
+
+void Ui::openSettings() {
+  settingsScreen_.open(
+      {[](void* context) { static_cast<Ui*>(context)->callbacks_.startWifiSetup(); },
+       [](void* context) { static_cast<Ui*>(context)->callbacks_.startBrokerSetup(); },
+       [](void* context) { static_cast<Ui*>(context)->callbacks_.openUnitList(); },
+       [](void* context, uint8_t value, bool save) {
+         static_cast<Ui*>(context)->brightness_ = value;
+         static_cast<Ui*>(context)->callbacks_.setBrightness(value, save);
+       }},
+      this, brightness_);
+}
+
+void Ui::showMqttStatus(const char* broker, bool connected, bool loginRefused) {
+  settingsScreen_.showMqtt(broker, connected, loginRefused);
+}
+
+void Ui::showBrightness(uint8_t brightness) { brightness_ = brightness; }
+
+void Ui::showSetup(const char* qrData, const char* line1, const char* line2, const char* hint,
+                   bool cancellable) {
+  setupScreen_.open(
+      qrData, line1, line2, hint, cancellable,
+      [](void* context) { static_cast<Ui*>(context)->callbacks_.cancelSetup(); }, this);
+}
+
+void Ui::showSetupProgress(const char* text) { setupScreen_.showProgress(text); }
+
+void Ui::closeSetup() { setupScreen_.close(); }
+
+void Ui::showUnits(const char* const* names, int count, const char* selected) {
+  unitList_.open(
+      names, count, selected,
+      [](void* context, const char* name) { static_cast<Ui*>(context)->callbacks_.setUnit(name); },
+      this);
+}
+
+void Ui::showRestarting() {
+  lv_obj_t* overlay = createOverlay();
+  lv_obj_t* label = lv_label_create(overlay);
+  lv_label_set_text(label, "Restarting...");
+  lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_color(label, lv_color_white(), 0);
+  lv_obj_center(label);
 }
 
 void Ui::onStep(int direction) {
-  if (std::isnan(shown_.targetTempC)) return;
-
-  const float next = stepTargetTemp(shown_.targetTempC, direction, unit_);
-  if (next != shown_.targetTempC) callbacks_.setTargetTemp(next);
-}
-
-void Ui::showTempUnit(TempUnit unit) {
-  unit_ = unit;
-  show(shown_);
-  settingsScreen_.showTempUnit(unit);
+  const float next =
+      stepTargetTemp(shown_.targetTemp, direction, shown_.tempStep, shown_.minTemp, shown_.maxTemp);
+  if (next != shown_.targetTemp) callbacks_.setTargetTemp(next);
 }
 
 void Ui::showWifiStatus(const WifiStatus& status) {
@@ -233,13 +296,6 @@ void Ui::showWifiStatus(const WifiStatus& status) {
   if (strcmp(lv_label_get_text(wifiIcon_), icon) != 0) lv_label_set_text(wifiIcon_, icon);
 
   settingsScreen_.showWifiStatus(status);
-}
-
-void Ui::openSettings() {
-  settingsScreen_.open(
-      unit_,
-      [](void* context, TempUnit unit) { static_cast<Ui*>(context)->callbacks_.setTempUnit(unit); },
-      this);
 }
 
 void Ui::openModePicker() {

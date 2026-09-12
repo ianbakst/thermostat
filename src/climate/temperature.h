@@ -1,6 +1,7 @@
 #pragma once
 //
-// Temperature units: conversion, setpoint stepping and formatting.
+// Setpoint stepping and temperature formatting. Temperatures are in whatever
+// unit the mini-split uses; nothing here converts between °F and °C.
 //
 
 #include <cstddef>
@@ -8,25 +9,11 @@
 
 enum class TempUnit : uint8_t { Fahrenheit, Celsius };
 
-// "°F" or "°C".
-const char* tempUnitSymbol(TempUnit unit);
+// One +/- tap: moves the setpoint one `step` up (direction +1) or down (-1),
+// staying within min..max. Returns `target` unchanged if it's already at the
+// limit or anything is unknown (NAN).
+float stepTargetTemp(float target, int direction, float step, float min, float max);
 
-float fahrenheitToCelsius(float f);
-float celsiusToFahrenheit(float c);
-
-// Converts between stored °C and the unit shown on screen.
-float toDisplayUnit(float celsius, TempUnit unit);
-float fromDisplayUnit(float value, TempUnit unit);
-
-// One +/- tap: moves the setpoint by 1°F or 0.5°C (direction is +1 or -1),
-// snapped to that step so it always lands on a round number in the display
-// unit, and clamped to TARGET_TEMP_MIN_C..TARGET_TEMP_MAX_C.
-float stepTargetTemp(float targetC, int direction, TempUnit unit);
-
-// Rounds a setpoint to the nearest whole step in `unit` (1°F or 0.5°C),
-// within the setpoint limits. E.g. 70°F (21.11°C) in °C becomes 21.0°C.
-float roundTargetTemp(float targetC, TempUnit unit);
-
-// Writes e.g. "72°" (°F, whole degrees) or "21.5°" (°C, one decimal), or
-// "72°F" / "21.5°C" with showUnit. Unknown (NAN) temperatures show as "--°".
-void formatTemp(char* buf, size_t len, float celsius, TempUnit unit, bool showUnit = false);
+// Writes e.g. "72°F", or "21.5°C" when the step isn't a whole degree.
+// Unknown (NAN) temperatures show as "--°".
+void formatTemp(char* buf, size_t len, float temp, TempUnit unit, float step);

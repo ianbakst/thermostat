@@ -14,16 +14,19 @@ const char* modeName(HvacMode mode) {
 
 const char* fanModeName(FanMode fan) {
   switch (fan) {
+    case FanMode::Auto:    return "Auto";
+    case FanMode::Quiet:   return "Quiet";
     case FanMode::Low:     return "Low";
+    case FanMode::Middle:  return "Middle";
     case FanMode::Medium:  return "Medium";
     case FanMode::High:    return "High";
-    case FanMode::Auto:    return "Auto";
-    case FanMode::Off:     return "Off";
-    case FanMode::Ambient: return "Ambient";
   }
   return "?";
 }
 
 bool usesTargetTemp(HvacMode mode) {
-  return mode != HvacMode::Off && mode != HvacMode::FanOnly;
+  // Dry has no setpoint of its own: the unit decides when to dehumidify
+  // ("Temperature cannot be set during DRY mode" in Mitsubishi's manual).
+  // The unit still reports a temperature — the setpoint Heat/Cool will use.
+  return mode != HvacMode::Off && mode != HvacMode::FanOnly && mode != HvacMode::Dry;
 }

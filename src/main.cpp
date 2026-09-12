@@ -4,13 +4,19 @@
 //
 // This file only wires modules together and runs the loop. Each piece of
 // hardware has its own module under src/.
+//
+// Nothing about the installation is compiled in: the network, its password,
+// the panel's name and the broker login are entered on the setup page the
+// panel serves over its own Wi-Fi network, and the mini-split is picked on
+// screen. All of it is saved in flash.
 
 #include <Arduino.h>
 
-#include "climate/climate.h"
-#include "climate/temperature.h"
+#include "climate/mini_split.h"
 #include "config.h"
 #include "display/display.h"
+#include "net/mqtt_connection.h"
+#include "net/provisioning.h"
 #include "net/wifi_connection.h"
 #include "storage/settings_store.h"
 #include "ui/ui.h"
@@ -19,50 +25,111 @@ static Display display;
 static Ui ui;
 static SettingsStore settingsStore;
 static WifiConnection wifi;
+static MqttConnection mqtt;
+static MiniSplit miniSplit(mqtt);  // the unit this panel controls
+static Provisioning provisioning(mqtt, miniSplit);  // setup mode tests both
 
-// The panel's own settings, loaded from flash at startup.
-static TempUnit tempUnit = DEFAULT_TEMP_UNIT;
+// Everything this panel was told about its installation. The network and MQTT
+// modules keep pointers into it, so it lives as long as the program does.
+static DeviceSettings settings;
 
-// The mini-split's state. Placeholder values for now; from step 4 this is
-// filled in from Home Assistant.
-static ClimateState climate;
+// When to restart, after settings change (0 = not restarting). Saving the new
+// settings and coming up fresh is simpler and more predictable than
+// reconfiguring Wi-Fi, MQTT and its subscriptions while they're running.
+static unsigned long restartAtMs = 0;
+
+// This pass's time, shared by everything in it. The tap callbacks below run
+// from LVGL inside display.tick(), which is the end of the same pass, so
+// reading millis() there would stamp a time later than the one modules were
+// ticked with — and an unsigned "now - then" would then underflow into a huge
+// elapsed time. One clock per pass keeps that impossible.
+static unsigned long loopNowMs = 0;
+
+static void restartSoon(const char* why) {
+  Serial.printf("Restarting: %s\n", why);
+  ui.showRestarting();
+  restartAtMs = millis() + SETUP_RESTART_DELAY_MS;
+}
 
 // ---------------------------------------------------------------------------
-// What happens when the user taps a control. For now: apply it locally and
-// redraw. In step 4 the climate ones send commands to Home Assistant instead.
+// What happens when the user taps a control: the change goes to the
+// mini-split, and the screen shows it straight away.
 // ---------------------------------------------------------------------------
 
-static void setTargetTemp(float celsius) {
-  climate.targetTempC = celsius;
-  char buf[16];
-  formatTemp(buf, sizeof(buf), celsius, tempUnit, true /* showUnit */);
-  Serial.printf("Requested target: %s\n", buf);
-  ui.show(climate);
+static void setTargetTemp(float temp) {
+  miniSplit.setTargetTemp(temp, loopNowMs);
+  ui.show(miniSplit.state());
 }
 
 static void setMode(HvacMode mode) {
-  climate.mode = mode;
-  Serial.printf("Requested mode: %s\n", modeName(mode));
-  ui.show(climate);
+  miniSplit.setMode(mode, loopNowMs);
+  ui.show(miniSplit.state());
 }
 
 static void setFanMode(FanMode fan) {
-  climate.fan = fan;
-  Serial.printf("Requested fan: %s\n", fanModeName(fan));
-  ui.show(climate);
+  miniSplit.setFanMode(fan, loopNowMs);
+  ui.show(miniSplit.state());
 }
 
-static void setTempUnit(TempUnit unit) {
-  tempUnit = unit;
-  settingsStore.saveTempUnit(unit);
-  Serial.printf("Units: %s (saved)\n", tempUnitSymbol(unit));
-  ui.showTempUnit(unit);
+// ---------------------------------------------------------------------------
+// Setup mode and the mini-split choice
+// ---------------------------------------------------------------------------
 
-  // Snap the setpoint to a round number in the new unit (e.g. 70°F is
-  // 21.11°C, which becomes 21.0°C). This changes the setpoint, so it goes
-  // through setTargetTemp like an arrow tap would.
-  const float rounded = roundTargetTemp(climate.targetTempC, unit);
-  if (!std::isnan(rounded) && rounded != climate.targetTempC) setTargetTemp(rounded);
+static void onSetupFinished(void*, const DeviceSettings& submitted) {
+  settings = submitted;
+  settingsStore.save(settings);
+  restartSoon("setup complete");
+}
+
+static void startWifiSetup() {
+  if (provisioning.active()) return;
+  // Setup takes over the radio to try the network being entered, so the
+  // saved-network retry has to stop fighting it.
+  wifi.pause();
+  provisioning.begin(Provisioning::Mode::Full, settings, onSetupFinished, nullptr);
+
+  char password[48];
+  snprintf(password, sizeof(password), "Password: %s", provisioning.apPassword());
+  // The QR code has to stay readable long enough to scan and type from.
+  display.setSleepAllowed(false);
+  ui.showSetup(provisioning.joinQrData(), provisioning.apSsid(), password,
+               "Scan to join, then the setup page opens by itself",
+               settings.hasNetwork() /* cancellable: there's a network to go back to */);
+  ui.showSetupProgress(provisioning.progress());
+}
+
+// Just the broker settings, over the network the panel is already on: the
+// phone doesn't have to leave your Wi-Fi, and step 1 isn't asked again.
+static void startBrokerSetup() {
+  if (provisioning.active() || !wifi.connected()) return;
+  provisioning.begin(Provisioning::Mode::BrokerOnly, settings, onSetupFinished, nullptr);
+  display.setSleepAllowed(false);
+  ui.showSetup(provisioning.pageUrl(), "On your network", provisioning.pageUrl(),
+               "Scan to open the setup page, or type that address", true /* cancellable */);
+  ui.showSetupProgress(provisioning.progress());
+}
+
+// Setup has by now taken over Wi-Fi and the broker connection, so the way back
+// to normal operation is a restart rather than unpicking all of that.
+static void cancelSetup() { restartSoon("setup cancelled"); }
+
+static void openUnitList() {
+  ui.showUnits(miniSplit.unitNames(), miniSplit.unitCount(), settings.unitName);
+}
+
+static void setUnit(const char* name) {
+  settingsStore.saveUnitName(name);
+  restartSoon("mini-split changed");
+}
+
+// Dragging the slider follows the backlight live; only letting go writes it to
+// flash, so a drag doesn't leave a trail of saves behind it.
+static void setBrightness(uint8_t value, bool save) {
+  display.setBrightness(value);
+  if (!save) return;
+  settings.brightness = value;
+  settingsStore.saveBrightness(value);
+  Serial.printf("Brightness: %u (saved)\n", value);
 }
 
 // ---------------------------------------------------------------------------
@@ -81,32 +148,72 @@ void setup() {
   Serial.println("-------------------------------------");
 
   settingsStore.begin();
-  tempUnit = settingsStore.loadTempUnit(DEFAULT_TEMP_UNIT);
-  Serial.printf("Units: %s\n", tempUnitSymbol(tempUnit));
-
-  climate.currentTempC = fahrenheitToCelsius(71.0f);
-  climate.targetTempC = fahrenheitToCelsius(70.0f);
-  climate.mode = HvacMode::Heat;
-  climate.fan = FanMode::Auto;
+  settings = settingsStore.load();
 
   display.begin();
-  ui.begin(tempUnit, {setTargetTemp, setMode, setFanMode, setTempUnit});
-  ui.show(climate);
+  display.setBrightness(settings.brightness);
+  ui.begin({setTargetTemp, setMode, setFanMode, startWifiSetup, startBrokerSetup, cancelSetup,
+            openUnitList, setUnit, setBrightness});
+  ui.showBrightness(settings.brightness);
+  ui.show(miniSplit.state());
+
+  // Registers the MQTT topics, including the one that lists the units to pick
+  // from. Setup mode needs that list too, so this runs either way.
+  miniSplit.begin(settings.unitName);
+
+  if (!settings.hasNetwork()) {
+    Serial.println("No network saved yet");
+    startWifiSetup();
+    return;
+  }
+
+  Serial.printf("Panel \"%s\", network \"%s\", broker %s:%u as \"%s\", unit \"%s\"\n",
+                settings.hostname, settings.wifiSsid, settings.mqttHost, settings.mqttPort,
+                settings.mqttUser, settings.unitName);
 
   // Connects in the background; the UI is already up and responsive.
-  wifi.begin();
+  wifi.begin(settings.wifiSsid, settings.wifiPassword, settings.hostname);
 }
 
 void loop() {
   const unsigned long now = millis();
+  loopNowMs = now;
+
+  if (restartAtMs != 0 && now >= restartAtMs) ESP.restart();
+
+  // Setup mode: serve the pages to whoever joined the panel's network, and
+  // show on the panel how far they've got.
+  if (provisioning.active()) {
+    provisioning.tick(now);
+    static const char* shownProgress = nullptr;
+    if (provisioning.progress() != shownProgress) {  // always the same few strings
+      shownProgress = provisioning.progress();
+      ui.showSetupProgress(shownProgress);
+    }
+  }
 
   // Refresh the Wi-Fi status on the settings page when the connection comes
   // or goes, and every few seconds so the signal strength stays current.
-  static unsigned long lastWifiStatusMs = 0;
-  if (wifi.tick(now) || now - lastWifiStatusMs >= WIFI_STATUS_REFRESH_MS) {
-    lastWifiStatusMs = now;
+  static unsigned long lastStatusMs = 0;
+  const bool wifiChanged = wifi.tick(now);
+  if (wifiChanged || now - lastStatusMs >= WIFI_STATUS_REFRESH_MS) {
+    lastStatusMs = now;
     ui.showWifiStatus(wifi.status());
+
+    char broker[80];
+    snprintf(broker, sizeof(broker), "%s:%u", settings.mqttHost, settings.mqttPort);
+    ui.showMqttStatus(broker, mqtt.connected(), mqtt.loginRefused());
   }
+
+  // MQTT needs the network, so it starts when Wi-Fi first connects. After
+  // that it reconnects by itself, including after Wi-Fi drops. While setup is
+  // running it owns the broker connection, testing what's being typed.
+  if (wifiChanged && wifi.connected() && !provisioning.active()) {
+    mqtt.begin(settings.mqttHost, settings.mqttPort, settings.mqttUser, settings.mqttPassword,
+               settings.hostname);
+  }
+
+  if (miniSplit.tick(now)) ui.show(miniSplit.state());
 
   display.tick();
   delay(LVGL_LOOP_DELAY_MS);

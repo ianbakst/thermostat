@@ -27,6 +27,12 @@
 // (that tap doesn't press anything).
 #define DISPLAY_SLEEP_TIMEOUT_MS 15000UL
 
+// Backlight level while awake (0-255), set on the settings page and saved in
+// flash. The minimum is what the slider's low end means: still visible in a
+// dark room, never off.
+#define DEFAULT_BRIGHTNESS 255
+#define BRIGHTNESS_MIN     20
+
 // 0 = portrait (USB at the bottom, as in Waveshare's demos), 1-3 rotate in
 // 90° steps. Only 0 has been confirmed on this board so far.
 #define DISPLAY_ROTATION  0
@@ -52,25 +58,63 @@
 #define BATTERY_ADC_PIN   0
 
 // ---------------------------------------------------------------------------
-// Thermostat
+// Wi-Fi
 // ---------------------------------------------------------------------------
-// TempUnit::Fahrenheit or TempUnit::Celsius: the unit used until one is
-// chosen on the settings page (that choice is saved in flash and wins from
-// then on). Temperatures are stored in °C; the unit only changes what's
-// displayed and the +/- step (1°F or 0.5°C).
-#define DEFAULT_TEMP_UNIT     TempUnit::Fahrenheit
-
-// Setpoint limits. Typical mini-split range (~61-88°F); Home Assistant
-// reports the real limits, which we'll use from step 4.
-#define TARGET_TEMP_MIN_C     16.0f
-#define TARGET_TEMP_MAX_C     31.0f
-
-// ---------------------------------------------------------------------------
-// Wi-Fi (network name and password live in include/secrets.h, not in git)
-// ---------------------------------------------------------------------------
-#define WIFI_HOSTNAME          "thermostat"  // name shown in your router's device list
+// The network, its password, the panel's name and the broker login are all
+// entered on the setup page and saved in flash (see src/net/provisioning.h);
+// nothing private is compiled into the firmware. The DEFAULT_* values below
+// are only what the form starts out with.
+#define DEFAULT_HOSTNAME       "thermostat"  // name in your router's list, and <name>.local
 #define WIFI_RETRY_INTERVAL_MS 30000UL       // start a fresh attempt after this long offline
 #define WIFI_STATUS_REFRESH_MS 5000UL        // how often the settings page's signal updates
+
+// ---------------------------------------------------------------------------
+// Setup mode: the panel's own Wi-Fi network and setup page
+// ---------------------------------------------------------------------------
+#define SETUP_AP_PREFIX        "Thermostat-"  // plus the end of the MAC address
+#define SETUP_AP_PASSWORD_LEN  8              // fresh random one each time; shown on the panel
+#define SETUP_RESTART_DELAY_MS 2000UL         // lets the phone load the "saved" page first
+
+// Each setup step tries what it collected before moving on. How long to wait
+// before calling the attempt failed.
+#define SETUP_WIFI_TEST_TIMEOUT_MS 20000UL
+#define SETUP_MQTT_TEST_TIMEOUT_MS 15000UL
+
+// How long to let the radio settle before believing WiFi.status(): just after
+// WiFi.begin() it can still report the last attempt's result, including the
+// network the panel was on before setup started.
+#define SETUP_WIFI_TEST_SETTLE_MS  1500UL
+
+// ---------------------------------------------------------------------------
+// MQTT broker
+// ---------------------------------------------------------------------------
+// Home Assistant's Mosquitto broker. Not port 8123: that's HA's web UI/API.
+#define DEFAULT_MQTT_HOST      "homeassistant.local"
+#define DEFAULT_MQTT_PORT      1883
+#define MQTT_RETRY_INTERVAL_MS 5000UL  // wait between connection attempts
+#define MQTT_KEEPALIVE_S       30      // the broker drops us after 1.5x this with no contact
+// Largest message we can receive. The biggest one we use is the mini-split's
+// Home Assistant discovery config, ~2.4KB.
+#define MQTT_BUFFER_SIZE       4096
+
+// ---------------------------------------------------------------------------
+// Mini-split
+// ---------------------------------------------------------------------------
+// Which unit this panel controls is picked on the panel, from the ones Home
+// Assistant advertises, and saved in flash. Its temperature unit, setpoint
+// limits and step come from the unit itself.
+#define MINI_SPLIT_TOPIC_PREFIX  "mitsubishi2mqtt"
+#define HA_DISCOVERY_PREFIX      "homeassistant"
+#define MINI_SPLIT_MAX_UNITS     12  // how many discovered units the list holds
+
+// +/- taps are sent once they pause for this long, so several quick taps
+// make one change (and one beep from the unit), not one per tap.
+#define SETPOINT_SEND_DELAY_MS   1000UL
+
+// After a change is sent, reports still showing the old value are ignored
+// for up to this long, so the screen doesn't jump back while the unit
+// catches up.
+#define PENDING_HOLD_MS          5000UL
 
 // ---------------------------------------------------------------------------
 // Timing

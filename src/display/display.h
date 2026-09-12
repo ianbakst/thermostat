@@ -18,4 +18,9 @@ class Display {
 
   // Backlight level while awake, 0-255.
   void setBrightness(uint8_t level);
+
+  // Allows or blocks the sleep timeout. Blocking it also wakes the display,
+  // and is for screens that have to stay readable without being touched (the
+  // setup screen, whose QR code gets scanned).
+  void setSleepAllowed(bool allowed);
 };
