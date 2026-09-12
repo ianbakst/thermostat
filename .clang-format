@@ -1,0 +1,37 @@
+# Formatting for this project, tuned to the style the code already uses:
+# Google's, but 100 columns, and a few allowances the UI and enum-mapping code
+# relies on (one-line `case X: return Y;` arms, aligned trailing comments).
+#
+#   clang-format -i src/**/*.cpp src/**/*.h include/*.h
+#
+# clang-format ships with Xcode rather than on PATH:
+#   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-format
+---
+Language: Cpp
+BasedOnStyle: Google
+
+ColumnLimit: 100
+IndentWidth: 2
+AccessModifierOffset: -1
+
+# `char* topic`, not `char *topic`.
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+# The switch-on-enum mapping functions (modeIcon, linkDescription, ...) read as
+# tables, one arm per line.
+AllowShortCaseLabelsOnASingleLine: true
+AlignConsecutiveAssignments: false
+
+# One-liner accessors and forwarding methods stay on one line.
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: WithoutElse
+
+# Trailing comments are aligned by hand in config.h and the enum tables.
+AlignTrailingComments: true
+ReflowComments: true
+
+# Includes are grouped deliberately (Arduino/library, then C++ standard, then
+# this project); don't let the formatter merge or reorder those groups.
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive

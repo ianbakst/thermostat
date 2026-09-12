@@ -75,26 +75,14 @@ static const char* linkDescription(ClimateLink link) {
 }
 
 void SettingsScreen::open(const Callbacks& callbacks, void* context, uint8_t brightness) {
-  if (overlay_) return;  // already open
+  if (!showOverlay()) return;  // already open
   callbacks_ = callbacks;
   context_ = context;
 
-  overlay_ = createOverlay();
-
-  // Top-left: close, in the same spot as the settings button that opened
-  // the page, with the title beside it. Both stay put while the rest scrolls.
-  lv_obj_t* closeButton = createFlatButton(overlay_, 40, 40);
-  lv_obj_align(closeButton, LV_ALIGN_TOP_LEFT, 8, 8);
-  lv_obj_set_ext_click_area(closeButton, 8);
-  lv_obj_center(createIcon(closeButton, ICON_CLOSE, &mdi_icons_24));
-  lv_obj_add_event_cb(
-      closeButton, [](lv_event_t* e) { static_cast<SettingsScreen*>(lv_event_get_user_data(e))->close(); },
-      LV_EVENT_CLICKED, this);
-
-  lv_obj_t* title = lv_label_create(overlay_);
-  lv_label_set_text(title, "Settings");
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 60, 17);
+  // The header stays put while the sections below it scroll.
+  addHeader(
+      "Settings",
+      [](lv_event_t* e) { static_cast<SettingsScreen*>(lv_event_get_user_data(e))->close(); }, this);
 
   // The sections below the title scroll as one column. Like every other widget
   // here it drops LVGL's default theme styles: among them is the theme's own
@@ -175,57 +163,67 @@ void SettingsScreen::open(const Callbacks& callbacks, void* context, uint8_t bri
       },
       LV_EVENT_CLICKED, this);
 
-  showWifiStatus(wifiStatus_);
-  showMqtt(broker_, mqttConnected_, mqttLoginRefused_);
-  showClimate(climateLink_, unitName_);
+  renderWifi();
+  renderMqtt();
+  renderClimate();
 }
 
 void SettingsScreen::showWifiStatus(const WifiStatus& status) {
   wifiStatus_ = status;
-  if (!overlay_) return;
-
-  char text[96];
-  if (status.connected) {
-    snprintf(text, sizeof(text), "%s\n%s\nSignal: %d dBm (%s)", status.ssid, status.ip, status.rssi,
-             signalQuality(status.rssi));
-  } else if (status.ssid[0] != '\0') {
-    snprintf(text, sizeof(text), "Connecting to %s...", status.ssid);
-  } else {
-    snprintf(text, sizeof(text), "No network saved");
-  }
-  setTextIfChanged(wifiLabel_, text);
-
-  // Changing the broker means testing it, which needs the network up.
-  setEnabled(mqttButton_, status.connected);
+  renderWifi();
 }
 
 void SettingsScreen::showMqtt(const char* broker, bool connected, bool loginRefused) {
   snprintf(broker_, sizeof(broker_), "%s", broker);
   mqttConnected_ = connected;
   mqttLoginRefused_ = loginRefused;
-  if (!overlay_) return;
-
-  char text[112];
-  snprintf(text, sizeof(text), "%s\n%s", broker_[0] ? broker_ : "(not set)",
-           loginRefused ? "Login refused" : connected ? "Connected" : "Connecting...");
-  setTextIfChanged(mqttLabel_, text);
+  renderMqtt();
 }
 
 void SettingsScreen::showClimate(ClimateLink link, const char* unitName) {
   climateLink_ = link;
   snprintf(unitName_, sizeof(unitName_), "%s", unitName);
+  renderClimate();
+}
+
+void SettingsScreen::renderWifi() {
+  if (!overlay_) return;
+
+  char text[96];
+  if (wifiStatus_.connected) {
+    snprintf(text, sizeof(text), "%s\n%s\nSignal: %d dBm (%s)", wifiStatus_.ssid, wifiStatus_.ip,
+             wifiStatus_.rssi, signalQuality(wifiStatus_.rssi));
+  } else if (wifiStatus_.ssid[0] != '\0') {
+    snprintf(text, sizeof(text), "Connecting to %s...", wifiStatus_.ssid);
+  } else {
+    snprintf(text, sizeof(text), "No network saved");
+  }
+  setTextIfChanged(wifiLabel_, text);
+
+  // Changing the broker means testing it, which needs the network up.
+  setEnabled(mqttButton_, wifiStatus_.connected);
+}
+
+void SettingsScreen::renderMqtt() {
+  if (!overlay_) return;
+
+  char text[112];
+  snprintf(text, sizeof(text), "%s\n%s", broker_[0] ? broker_ : "(not set)",
+           mqttLoginRefused_ ? "Login refused" : mqttConnected_ ? "Connected" : "Connecting...");
+  setTextIfChanged(mqttLabel_, text);
+}
+
+void SettingsScreen::renderClimate() {
   if (!overlay_) return;
 
   char text[64];
-  snprintf(text, sizeof(text), "%s\n%s", unitName_[0] ? unitName_ : "(none)", linkDescription(link));
+  snprintf(text, sizeof(text), "%s\n%s", unitName_[0] ? unitName_ : "(none)",
+           linkDescription(climateLink_));
   setTextIfChanged(climateLabel_, text);
 }
 
 void SettingsScreen::close() {
-  // We're inside the close button's own click event, so the page can't be
-  // deleted right now. delete_async removes it on the next LVGL cycle.
-  lv_obj_delete_async(overlay_);
-  overlay_ = nullptr;
+  hideOverlay();
   wifiLabel_ = nullptr;
   mqttLabel_ = nullptr;
   mqttButton_ = nullptr;

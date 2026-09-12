@@ -4,6 +4,7 @@
 
 #include "climate/mini_split.h"
 #include "net/mqtt_connection.h"
+#include "net/setup_pages.h"
 #include "storage/settings_store.h"
 
 // Setup mode: the panel runs its own Wi-Fi network with a three-step setup
@@ -26,7 +27,9 @@
 // by itself: phones check for a captive portal when they join a network, and
 // the DNS server here answers every lookup with the panel's own address.
 //
-// Finishing saves everything and restarts the panel; main.cpp does both.
+// Finishing saves everything and restarts the panel; main.cpp does both. So
+// does cancelling, since by then the tests own the radio and the broker
+// connection — which is why there's no teardown path here.
 class Provisioning {
  public:
   using OnFinished = void (*)(void* context, const DeviceSettings& settings);
@@ -48,13 +51,8 @@ class Provisioning {
   // `current` pre-fills the form; passwords are never sent to the browser.
   void begin(Mode mode, const DeviceSettings& current, OnFinished onFinished, void* context);
 
-  Mode mode() const { return mode_; }
-
   // Where the setup pages are, e.g. "http://192.168.4.1/".
   const char* pageUrl() const { return pageUrl_; }
-
-  // Stops the network and the page, and returns the radio to normal use.
-  void end();
 
   bool active() const { return active_; }
 
@@ -76,6 +74,8 @@ class Provisioning {
 
   void sendCurrentPage();
   void redirectToCurrentPage();
+  // What the page renderers need: the step's label, the draft, the last error.
+  setup_pages::Context pageContext() const;
   void submitWifi();
   void submitMqtt();
   void submitUnit();
@@ -83,7 +83,6 @@ class Provisioning {
   void startMqttTest();
   void failStep(Step step, const char* error);
   const char* stepLabel() const;
-  int stepCount() const { return mode_ == Mode::Full ? 3 : 2; }
 
   WebServer server_{80};
   DNSServer dns_;

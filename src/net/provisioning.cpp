@@ -17,8 +17,7 @@ static void randomPassword(char* out, size_t length) {
   out[length] = '\0';
 }
 
-// Values go into HTML attributes and text, and a network name can contain
-// quotes or angle brackets.
+// A network name can contain characters that mean something in HTML.
 static String escapeHtml(const char* text) {
   String out;
   for (const char* c = text; *c; c++) {
@@ -31,31 +30,6 @@ static String escapeHtml(const char* text) {
     }
   }
   return out;
-}
-
-// One plain page per step, no external files: a phone in setup mode has no
-// internet access, so anything it couldn't fetch from us wouldn't load at all.
-static String pageTop(const char* step, bool reloadItself) {
-  String top = "<!DOCTYPE html><html><head><meta charset=utf-8>"
-               "<meta name=viewport content=\"width=device-width,initial-scale=1\">";
-  // The pages that wait on a test reload themselves, which also recovers the
-  // view if the phone briefly lost the panel's network.
-  if (reloadItself) top += "<meta http-equiv=refresh content=2>";
-  top += "<title>Thermostat setup</title><style>"
-         "body{font-family:system-ui,sans-serif;margin:0 auto;padding:20px;max-width:26em;"
-         "background:#111;color:#eee}h1{font-size:20px;margin:4px 0 0}"
-         "label{display:block;margin:14px 0 4px;font-size:14px;color:#aaa}"
-         "input{width:100%;box-sizing:border-box;padding:10px;font-size:16px;border-radius:6px;"
-         "border:1px solid #444;background:#222;color:#eee}"
-         "button{margin-top:22px;width:100%;padding:14px;font-size:16px;border:0;border-radius:6px;"
-         "background:#1976d2;color:#fff}"
-         ".units button{margin-top:8px;background:#222;border:1px solid #444;text-align:left}"
-         ".step{color:#888;font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin:0}"
-         ".hint{color:#999;font-size:13px;line-height:1.4;margin:4px 0 0}"
-         ".error{background:#5c0e0e;padding:10px;border-radius:6px;font-size:14px;margin-top:14px}"
-         "a{color:#64b5f6}</style></head><body>";
-  top += "<p class=step>" + String(step) + "</p>";
-  return top;
 }
 
 void Provisioning::begin(Mode mode, const DeviceSettings& current, OnFinished onFinished,
@@ -82,7 +56,7 @@ void Provisioning::begin(Mode mode, const DeviceSettings& current, OnFinished on
     WiFi.scanDelete();
     Serial.printf("Setup: %d networks in range\n", found);
 
-    snprintf(apSsid_, sizeof(apSsid_), SETUP_AP_PREFIX "%06llX",
+    snprintf(apSsid_, sizeof(apSsid_), "%s%06llX", SETUP_AP_PREFIX,
              static_cast<unsigned long long>(ESP.getEfuseMac() >> 24) & 0xFFFFFF);
     randomPassword(apPassword_, SETUP_AP_PASSWORD_LEN);
     snprintf(joinQr_, sizeof(joinQr_), "WIFI:T:WPA;S:%s;P:%s;;", apSsid_, apPassword_);
@@ -127,18 +101,6 @@ void Provisioning::begin(Mode mode, const DeviceSettings& current, OnFinished on
   } else {
     Serial.printf("Setup: broker settings only, page %s\n", pageUrl_);
   }
-}
-
-void Provisioning::end() {
-  if (!active_) return;
-  active_ = false;
-  server_.stop();
-  if (mode_ == Mode::Full) {
-    dns_.stop();
-    WiFi.softAPdisconnect(true);
-    WiFi.mode(WIFI_STA);
-  }
-  Serial.println("Setup: closed");
 }
 
 const char* Provisioning::progress() const {
@@ -253,105 +215,40 @@ void Provisioning::startMqttTest() {
 // ---------------------------------------------------------------------------
 
 void Provisioning::redirectToCurrentPage() {
-  server_.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/");
+  // pageUrl_, not the access point's address: in BrokerOnly mode there is no
+  // access point, and the pages are served on the panel's own network address.
+  server_.sendHeader("Location", pageUrl_);
   server_.send(302, "text/plain", "");
 }
 
+setup_pages::Context Provisioning::pageContext() const {
+  setup_pages::Context context{stepLabel(), draft_};
+  context.error = error_;
+  context.networks = &networkOptions_;
+  context.apSsid = apSsid_;
+  // Only Full mode has an earlier step; BrokerOnly starts at the broker.
+  context.canGoBack = mode_ == Mode::Full;
+  return context;
+}
+
 void Provisioning::sendCurrentPage() {
+  const setup_pages::Context context = pageContext();
+
   String page;
   switch (step_) {
-    case Step::Wifi: {
-      page = pageTop(stepLabel(), false) + "<h1>Wi-Fi</h1>";
-      if (error_) page += "<p class=error>" + escapeHtml(error_) + "</p>";
-      page += "<form method=POST action=/wifi>"
-              "<label>Network (2.4GHz)</label>"
-              "<input name=ssid list=nets required value=\"" + escapeHtml(draft_.wifiSsid) + "\">"
-              "<datalist id=nets>" + networkOptions_ + "</datalist>"
-              "<label>Password</label>"
-              "<input name=wifipass type=password placeholder=\"" +
-              // Only offer to keep a password that exists, so a blank field
-              // can't quietly save an empty one.
-              String(draft_.wifiPassword[0] ? "leave blank to keep the saved one" : "required") +
-              "\"><label>Name for this panel (optional)</label>"
-              "<input name=hostname placeholder=\"" DEFAULT_HOSTNAME "\" value=\"" +
-              escapeHtml(draft_.hostname) + "\">"
-              "<p class=hint>What the panel calls itself on your network: the name in your "
-              "router's device list, and &lt;name&gt;.local. Not the mini-split's name.</p>"
-              "<button type=submit>Next</button></form>";
+    case Step::Wifi:        page = setup_pages::wifiForm(context); break;
+    // The waiting pages always offer Back: it's how a test in progress is
+    // abandoned, whichever step started it.
+    case Step::WifiTesting: page = setup_pages::wifiTesting(context); break;
+    case Step::Mqtt:        page = setup_pages::mqttForm(context); break;
+    case Step::MqttTesting: page = setup_pages::mqttTesting(context); break;
+    case Step::Unit:
+      page = setup_pages::unitChoice(context, miniSplit_.unitNames(), miniSplit_.unitCount());
       break;
-    }
-
-    case Step::WifiTesting:
-      page = pageTop(stepLabel(), true) + "<h1>Connecting...</h1>"
-             "<p class=hint>Joining \"" + escapeHtml(draft_.wifiSsid) +
-             "\". This page reloads by itself.</p>"
-             "<p class=hint>If it stops loading, rejoin \"" + escapeHtml(apSsid_) +
-             "\" — the panel changes Wi-Fi channel as it connects, which can drop your phone for "
-             "a moment.</p><p><a href=/back>Back</a></p>";
-      break;
-
-    case Step::Mqtt: {
-      page = pageTop(stepLabel(), false) + "<h1>MQTT</h1>";
-      if (error_) page += "<p class=error>" + escapeHtml(error_) + "</p>";
-      page += "<p class=hint>Wi-Fi is connected. Now the broker Home Assistant uses.</p>"
-              "<form method=POST action=/mqtt>"
-              "<label>Broker</label>"
-              "<input name=mqtthost required value=\"" + escapeHtml(draft_.mqttHost) + "\">"
-              "<label>Port</label>"
-              "<input name=mqttport type=number required value=\"" + String(draft_.mqttPort) + "\">"
-              "<p class=hint>Usually homeassistant.local on port 1883. Not port 8123, which is "
-              "HA's web interface.</p>"
-              "<label>Username</label>"
-              "<input name=mqttuser value=\"" + escapeHtml(draft_.mqttUser) + "\">"
-              "<label>Password</label>"
-              "<input name=mqttpass type=password placeholder=\"" +
-              String(draft_.mqttPassword[0] ? "leave blank to keep the saved one" : "required") +
-              "\"><p class=hint>The broker login your mini-splits use. Leave both blank only if "
-              "your broker allows anonymous clients.</p>"
-              "<button type=submit>Next</button></form>";
-      // Nothing to go back to when only the broker is being changed.
-      if (mode_ == Mode::Full) page += "<p><a href=/back>Back</a></p>";
-      break;
-    }
-
-    case Step::MqttTesting:
-      page = pageTop(stepLabel(), true) + "<h1>Connecting...</h1>"
-             "<p class=hint>Reaching " + escapeHtml(draft_.mqttHost) +
-             ". This page reloads by itself.</p><p><a href=/back>Back</a></p>";
-      break;
-
-    case Step::Unit: {
-      const int count = miniSplit_.unitCount();
-      // The list is whatever Home Assistant has advertised on the discovery
-      // topic since the broker connected, which takes a moment to arrive.
-      page = pageTop(stepLabel(), count == 0) + "<h1>Mini-split</h1>";
-      if (count == 0) {
-        page += "<p class=hint>Waiting for Home Assistant to say which mini-splits exist. This "
-                "page reloads by itself.</p>";
-      } else {
-        page += "<p class=hint>Which unit does this panel control?</p>"
-                "<form class=units method=POST action=/unit>";
-        for (int i = 0; i < count; i++) {
-          const String name = escapeHtml(miniSplit_.unitNames()[i]);
-          page += "<button type=submit name=unit value=\"" + name + "\">" + name + "</button>";
-        }
-        page += "</form>";
-      }
-      page += "<form method=POST action=/unit><button type=submit name=unit value=\"\">"
-              "Skip, I'll pick on the panel</button></form>"
-              "<p><a href=/back>Back</a></p>";
-      break;
-    }
-
-    case Step::Done:
-      page = pageTop(stepLabel(), false) + "<h1>All set</h1>"
-             "<p class=hint>The panel is restarting" +
-             String(mode_ == Mode::Full ? ". This setup network is about to disappear." : ".") +
-             "</p>";
-      break;
+    case Step::Done:        page = setup_pages::done(context, mode_ == Mode::Full); break;
   }
 
-  server_.send(200, "text/html", page + "</body></html>");
+  server_.send(200, "text/html", page);
 }
 
 void Provisioning::submitWifi() {

@@ -10,7 +10,9 @@
 // anything.
 class Display {
  public:
-  void begin();
+  // `brightness` (0-255) is applied as the backlight comes up, so a panel set
+  // dim doesn't flash at full brightness on the way in.
+  void begin(uint8_t brightness);
 
   // Runs LVGL timers, rendering and touch input, and puts the display to
   // sleep when it's been idle. Call every loop iteration.

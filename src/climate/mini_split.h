@@ -2,61 +2,9 @@
 #include <cmath>
 
 #include "climate/climate.h"
+#include "climate/tracked.h"
 #include "config.h"
 #include "net/mqtt_connection.h"
-
-// One setting the panel can change (setpoint, mode or fan). A change shows
-// on screen immediately. Until the unit reports that value back, reports
-// still carrying the old one are ignored, so the screen doesn't jump back
-// while the unit catches up. After PENDING_HOLD_MS the latest report wins
-// either way (e.g. if the unit refused the change).
-template <typename T>
-struct PendingValue {
-  bool pending = false;
-  unsigned long sinceMs = 0;
-  bool hasReport = false;
-  T reported{};  // latest value from the unit
-
-  static bool same(T a, T b) { return a == b; }
-
-  // Sets `shown` to `value`. Returns true if that changed it.
-  static bool update(T& shown, T value) {
-    if (same(shown, value)) return false;
-    shown = value;
-    return true;
-  }
-
-  // The user asked for `value`.
-  void request(T& shown, T value, unsigned long nowMs) {
-    shown = value;
-    pending = true;
-    sinceMs = nowMs;
-  }
-
-  // The unit reported `value`. Returns true if `shown` changed.
-  bool report(T& shown, T value) {
-    reported = value;
-    hasReport = true;
-    if (pending) {
-      if (!same(shown, value)) return false;  // still the old value
-      pending = false;
-    }
-    return update(shown, value);
-  }
-
-  // Stops waiting after PENDING_HOLD_MS. Returns true if `shown` changed.
-  bool expire(T& shown, unsigned long nowMs) {
-    if (!pending || nowMs - sinceMs < PENDING_HOLD_MS) return false;
-    pending = false;
-    return hasReport && update(shown, reported);
-  }
-};
-
-// Temperatures are compared loosely (float rounding), and unknown equals unknown.
-template <>
-inline bool PendingValue<float>::same(float a, float b) {
-  return std::fabs(a - b) < 0.01f || (std::isnan(a) && std::isnan(b));
-}
 
 // The mini-split this panel controls, through the MQTT topics its
 // mitsubishi2mqtt firmware uses. These are the same topics and values Home
@@ -114,9 +62,10 @@ class MiniSplit {
   MqttConnection& mqtt_;
   ClimateState state_;
 
-  PendingValue<float> target_;
-  PendingValue<HvacMode> mode_;
-  PendingValue<FanMode> fan_;
+  // Bound to the state_ fields above, which they keep up to date.
+  Tracked<float> target_{state_.targetTemp};
+  Tracked<HvacMode> mode_{state_.mode};
+  Tracked<FanMode> fan_{state_.fan};
   bool targetSendDue_ = false;  // a setpoint change is waiting for the taps to pause
 
   bool hasConfig_ = false;

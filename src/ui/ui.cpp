@@ -266,8 +266,6 @@ void Ui::showSetup(const char* qrData, const char* line1, const char* line2, con
 
 void Ui::showSetupProgress(const char* text) { setupScreen_.showProgress(text); }
 
-void Ui::closeSetup() { setupScreen_.close(); }
-
 void Ui::showUnits(const char* const* names, int count, const char* selected) {
   unitList_.open(
       names, count, selected,

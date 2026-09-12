@@ -20,31 +20,17 @@ static lv_obj_t* makeLine(lv_obj_t* parent, const char* text, int32_t y, lv_colo
 
 void SetupScreen::open(const char* qrData, const char* line1, const char* line2, const char* hint,
                        bool cancellable, OnCancel onCancel, void* context) {
-  if (overlay_) return;  // already open
+  if (!showOverlay()) return;  // already open
   onCancel_ = onCancel;
   context_ = context;
 
-  overlay_ = createOverlay();
-
-  lv_obj_t* title = lv_label_create(overlay_);
-  lv_label_set_text(title, "Setup");
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 14);
-
-  // Only offer a way out if the panel has a network to go back to.
-  if (cancellable) {
-    lv_obj_t* closeButton = createFlatButton(overlay_, 40, 40);
-    lv_obj_align(closeButton, LV_ALIGN_TOP_LEFT, 4, 4);
-    lv_obj_set_ext_click_area(closeButton, 8);
-    lv_obj_center(createIcon(closeButton, ICON_CLOSE, &mdi_icons_24));
-    lv_obj_add_event_cb(
-        closeButton,
-        [](lv_event_t* e) {
-          auto* screen = static_cast<SetupScreen*>(lv_event_get_user_data(e));
-          if (screen->onCancel_) screen->onCancel_(screen->context_);
-        },
-        LV_EVENT_CLICKED, this);
-  }
+  // Only offer a way out if the panel has a network to go back to. The handler
+  // is named so both branches of the choice below have the same type.
+  const lv_event_cb_t onCancelTap = [](lv_event_t* e) {
+    auto* screen = static_cast<SetupScreen*>(lv_event_get_user_data(e));
+    if (screen->onCancel_) screen->onCancel_(screen->context_);
+  };
+  addHeader("Setup", cancellable ? onCancelTap : nullptr, this);
 
   // The QR code needs a white margin around it ("quiet zone") to scan
   // reliably, so it sits on a white panel a little larger than itself.
@@ -54,7 +40,7 @@ void SetupScreen::open(const char* qrData, const char* line1, const char* line2,
   lv_obj_set_style_bg_opa(frame, LV_OPA_COVER, 0);
   lv_obj_set_style_bg_color(frame, lv_color_white(), 0);
   lv_obj_set_style_radius(frame, 4, 0);
-  lv_obj_align(frame, LV_ALIGN_TOP_MID, 0, 46);
+  lv_obj_align(frame, LV_ALIGN_TOP_MID, 0, 52);
 
   lv_obj_t* qr = lv_qrcode_create(frame);
   lv_qrcode_set_size(qr, 124);
@@ -63,23 +49,14 @@ void SetupScreen::open(const char* qrData, const char* line1, const char* line2,
   lv_qrcode_update(qr, qrData, strlen(qrData));
   lv_obj_center(qr);
 
-  makeLine(overlay_, line1, 196, lv_color_white());
-  makeLine(overlay_, line2, 218, lv_color_white());
-  makeLine(overlay_, hint, 244, lv_palette_main(LV_PALETTE_GREY));
+  makeLine(overlay_, line1, 198, lv_color_white());
+  makeLine(overlay_, line2, 220, lv_color_white());
+  makeLine(overlay_, hint, 246, lv_palette_main(LV_PALETTE_GREY));
 
-  progressLabel_ = makeLine(overlay_, "", 290, lv_palette_main(LV_PALETTE_BLUE));
+  progressLabel_ = makeLine(overlay_, "", 292, lv_palette_main(LV_PALETTE_BLUE));
 }
 
 void SetupScreen::showProgress(const char* text) {
   if (!progressLabel_) return;
   lv_label_set_text(progressLabel_, text);
-}
-
-void SetupScreen::close() {
-  if (!overlay_) return;
-  // This can run inside the close button's own click event, where the screen
-  // can't be deleted yet; delete_async removes it on the next LVGL cycle.
-  lv_obj_delete_async(overlay_);
-  overlay_ = nullptr;
-  progressLabel_ = nullptr;
 }

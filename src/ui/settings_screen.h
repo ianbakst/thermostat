@@ -1,9 +1,11 @@
 #pragma once
 #include <lvgl.h>
+
 #include <cstdint>
 
 #include "climate/climate.h"
 #include "net/wifi_status.h"
+#include "ui/overlay_screen.h"
 
 // The settings page (portrait, 172x320). The title bar stays put and
 // everything below it scrolls, because there's more here than fits:
@@ -32,7 +34,7 @@
 // The page is built when opened and deleted when closed. While it's closed it
 // just remembers the latest status to show next time. Like the rest of the UI
 // it does nothing itself: the buttons and the slider call back to the owner.
-class SettingsScreen {
+class SettingsScreen : public OverlayScreen {
  public:
   struct Callbacks {
     void (*startWifiSetup)(void* context);
@@ -50,9 +52,14 @@ class SettingsScreen {
   void showClimate(ClimateLink link, const char* unitName);
 
  private:
+  // The show* methods above store what they're given; these draw the stored
+  // values. Keeping the two apart means opening the page never has to pass a
+  // member back into its own setter (which would copy a buffer onto itself).
+  void renderWifi();
+  void renderMqtt();
+  void renderClimate();
   void close();
 
-  lv_obj_t* overlay_ = nullptr;
   lv_obj_t* wifiLabel_ = nullptr;
   lv_obj_t* mqttLabel_ = nullptr;
   lv_obj_t* mqttButton_ = nullptr;

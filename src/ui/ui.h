@@ -64,7 +64,6 @@ class Ui {
   void showSetup(const char* qrData, const char* line1, const char* line2, const char* hint,
                  bool cancellable);
   void showSetupProgress(const char* text);
-  void closeSetup();
 
   // The mini-splits to pick from (from MiniSplit).
   void showUnits(const char* const* names, int count, const char* selected);

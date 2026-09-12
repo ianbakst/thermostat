@@ -2,6 +2,7 @@
 #include <Preferences.h>
 
 #include <cstdint>
+#include <cstdio>
 
 #include "config.h"
 
@@ -10,10 +11,18 @@
 // which is picked on the panel once Home Assistant's units are known. None of
 // it is compiled into the firmware, so the same build runs on any panel.
 struct DeviceSettings {
+  // The two text defaults are copied in rather than being initializers: the
+  // config values are typed constants now, and only a string literal can
+  // initialize a char array.
+  DeviceSettings() {
+    snprintf(hostname, sizeof(hostname), "%s", DEFAULT_HOSTNAME);
+    snprintf(mqttHost, sizeof(mqttHost), "%s", DEFAULT_MQTT_HOST);
+  }
+
   char wifiSsid[33] = "";
   char wifiPassword[64] = "";
-  char hostname[33] = DEFAULT_HOSTNAME;
-  char mqttHost[64] = DEFAULT_MQTT_HOST;
+  char hostname[33] = "";
+  char mqttHost[64] = "";
   uint16_t mqttPort = DEFAULT_MQTT_PORT;
   char mqttUser[33] = "";
   char mqttPassword[64] = "";

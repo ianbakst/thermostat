@@ -85,11 +85,13 @@ bool MiniSplit::tick(unsigned long nowMs) {
   // Until then we can't know it.
   if (connectionChanged && !mqtt_.connected()) availabilityKnown_ = false;
 
-  if (targetSendDue_ && nowMs - target_.sinceMs >= SETPOINT_SEND_DELAY_MS) sendTargetTemp(nowMs);
+  if (targetSendDue_ && nowMs - target_.heldSinceMs() >= SETPOINT_SEND_DELAY_MS) {
+    sendTargetTemp(nowMs);
+  }
 
-  changed_ |= target_.expire(state_.targetTemp, nowMs);
-  changed_ |= mode_.expire(state_.mode, nowMs);
-  changed_ |= fan_.expire(state_.fan, nowMs);
+  changed_ |= target_.expire(nowMs);
+  changed_ |= mode_.expire(nowMs);
+  changed_ |= fan_.expire(nowMs);
 
   const ClimateLink link = currentLink();
   if (link != state_.link) {
@@ -107,7 +109,7 @@ ClimateLink MiniSplit::currentLink() const {
     return mqtt_.loginRefused() ? ClimateLink::Refused : ClimateLink::Connecting;
   }
   if (availabilityKnown_ && !unitOnline_) return ClimateLink::Offline;
-  if (!availabilityKnown_ || !hasConfig_ || !target_.hasReport) return ClimateLink::Waiting;
+  if (!availabilityKnown_ || !hasConfig_ || !target_.hasReport()) return ClimateLink::Waiting;
   return ClimateLink::Online;
 }
 
@@ -189,20 +191,20 @@ void MiniSplit::readSettings(const char* payload) {
 
   // Only in "state" messages. mitsubishi2mqtt uses 0 for "not read yet".
   const float room = doc["roomTemperature"] | NAN;
-  if (room > 0) changed |= PendingValue<float>::update(state_.currentTemp, room);
+  if (room > 0) changed |= assignIfChanged(state_.currentTemp, room);
 
   if (doc["temperature"].is<float>()) {
-    changed |= target_.report(state_.targetTemp, doc["temperature"].as<float>());
+    changed |= target_.report(doc["temperature"].as<float>());
   }
   const int mode = indexOf(MODE_VALUES, HVAC_MODE_COUNT, doc["mode"] | "");
-  if (mode >= 0) changed |= mode_.report(state_.mode, static_cast<HvacMode>(mode));
+  if (mode >= 0) changed |= mode_.report(static_cast<HvacMode>(mode));
   const int fan = indexOf(FAN_VALUES, FAN_MODE_COUNT, doc["fan"] | "");
-  if (fan >= 0) changed |= fan_.report(state_.fan, static_cast<FanMode>(fan));
+  if (fan >= 0) changed |= fan_.report(static_cast<FanMode>(fan));
 
   // Only in "state" messages. Right after a mode change mitsubishi2mqtt
   // guesses (e.g. "cooling" for Cool); its next 30s report has the real one.
   const int action = indexOf(ACTION_VALUES, HVAC_ACTION_COUNT, doc["action"] | "");
-  if (action >= 0) changed |= PendingValue<HvacAction>::update(state_.action, static_cast<HvacAction>(action));
+  if (action >= 0) changed |= assignIfChanged(state_.action, static_cast<HvacAction>(action));
 
   if (!changed) return;
   changed_ = true;
@@ -225,7 +227,7 @@ void MiniSplit::setTargetTemp(float temp, unsigned long nowMs) {
   // mitsubishi2mqtt replaces an out-of-range setpoint with 23°C, so never
   // send one.
   temp = std::clamp(temp, state_.minTemp, state_.maxTemp);
-  target_.request(state_.targetTemp, temp, nowMs);
+  target_.request(temp, nowMs);
   targetSendDue_ = true;  // tick() sends it once the taps pause
 }
 
@@ -234,18 +236,18 @@ void MiniSplit::sendTargetTemp(unsigned long nowMs) {
   char payload[16];
   snprintf(payload, sizeof(payload), "%g", state_.targetTemp);
   publish(tempSetTopic_, payload);
-  target_.sinceMs = nowMs;  // hold from when it was sent, not the last tap
+  target_.holdFrom(nowMs);  // hold from when it was sent, not the last tap
 }
 
 void MiniSplit::setMode(HvacMode mode, unsigned long nowMs) {
   if (state_.link != ClimateLink::Online || mode == state_.mode) return;
-  mode_.request(state_.mode, mode, nowMs);
+  mode_.request(mode, nowMs);
   publish(modeSetTopic_, MODE_VALUES[static_cast<int>(mode)]);
 }
 
 void MiniSplit::setFanMode(FanMode fan, unsigned long nowMs) {
   if (state_.link != ClimateLink::Online || fan == state_.fan) return;
-  fan_.request(state_.fan, fan, nowMs);
+  fan_.request(fan, nowMs);
   publish(fanSetTopic_, FAN_VALUES[static_cast<int>(fan)]);
 }
 

@@ -118,16 +118,19 @@ src/
   climate/
     climate.h/.cpp        ClimateState: one mini-split's mode, fan, action, temps
     temperature.h/.cpp    setpoint stepping, formatting
+    tracked.h             a value the panel sets and the unit reports back
     mini_split.h/.cpp     mitsubishi2mqtt topics: reads state, sends changes
   net/
     wifi_connection.h/.cpp connects and stays connected to Wi-Fi, mDNS
     wifi_status.h         connection snapshot the UI can display
     mqtt_connection.h/.cpp connects to the MQTT broker (ESP-IDF client)
     provisioning.h/.cpp   setup mode: the panel's own network and 3-step setup
+    setup_pages.h/.cpp    the HTML those steps serve (rendering only)
   storage/
     settings_store.h/.cpp what the panel was told about your home, saved in flash
   ui/
     ui.h/.cpp             LVGL thermostat screen
+    overlay_screen.h/.cpp base for the full-screen pages (lifecycle, header)
     picker.h/.cpp         full-screen option grid (mode, fan)
     settings_screen.h/.cpp settings page: scrolling Wi-Fi, MQTT, mini-split, brightness
     setup_screen.h/.cpp   setup mode screen (QR code to join, step progress)

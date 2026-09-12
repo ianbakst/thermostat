@@ -34,7 +34,8 @@ bool WifiConnection::tick(unsigned long nowMs) {
 
   if (changed && connected) {
     Serial.printf("Wi-Fi: connected, IP %s, signal %d dBm, free heap %u bytes\n",
-                  WiFi.localIP().toString().c_str(), WiFi.RSSI(), ESP.getFreeHeap());
+                  WiFi.localIP().toString().c_str(), WiFi.RSSI(),
+                  static_cast<unsigned>(ESP.getFreeHeap()));
     // Answer to <panel name>.local, so the panel can be found without
     // hunting for its IP address.
     if (!mdnsStarted_ && MDNS.begin(hostname_)) {

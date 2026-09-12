@@ -150,8 +150,7 @@ void setup() {
   settingsStore.begin();
   settings = settingsStore.load();
 
-  display.begin();
-  display.setBrightness(settings.brightness);
+  display.begin(settings.brightness);
   ui.begin({setTargetTemp, setMode, setFanMode, startWifiSetup, startBrokerSetup, cancelSetup,
             openUnitList, setUnit, setBrightness});
   ui.showBrightness(settings.brightness);

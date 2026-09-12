@@ -87,14 +87,14 @@ static void touchReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
 
 static void logCb(lv_log_level_t, const char* msg) { Serial.print(msg); }
 
-void Display::begin() {
+void Display::begin(uint8_t brightness) {
   if (!panel.begin(TFT_SPI_FREQ)) {
     Serial.println("Display: panel init failed");
   }
   panel.fillScreen(RGB565_BLACK);
 
   ledcAttach(TFT_BL_PIN, 5000, 8);
-  setBrightness(255);
+  setBrightness(brightness);
 
   touchOk = touch.begin(DISPLAY_ROTATION);
 
@@ -116,7 +116,8 @@ void Display::begin() {
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
   lv_indev_set_read_cb(indev, touchReadCb);
 
-  Serial.printf("Display: %dx%d, rotation %d\n", width, height, DISPLAY_ROTATION);
+  Serial.printf("Display: %dx%d, rotation %d\n", static_cast<int>(width), static_cast<int>(height),
+                DISPLAY_ROTATION);
 }
 
 void Display::tick() {

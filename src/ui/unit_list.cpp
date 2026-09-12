@@ -8,26 +8,15 @@
 
 void UnitList::open(const char* const* names, int count, const char* selected, OnSelect onSelect,
                     void* context) {
-  if (overlay_) return;  // already open
+  if (!showOverlay()) return;  // already open
   names_ = names;
   count_ = count;
   onSelect_ = onSelect;
   context_ = context;
 
-  overlay_ = createOverlay();
-
-  lv_obj_t* closeButton = createFlatButton(overlay_, 40, 40);
-  lv_obj_align(closeButton, LV_ALIGN_TOP_LEFT, 8, 8);
-  lv_obj_set_ext_click_area(closeButton, 8);
-  lv_obj_center(createIcon(closeButton, ICON_CLOSE, &mdi_icons_24));
-  lv_obj_add_event_cb(
-      closeButton, [](lv_event_t* e) { static_cast<UnitList*>(lv_event_get_user_data(e))->close(); },
-      LV_EVENT_CLICKED, this);
-
-  lv_obj_t* title = lv_label_create(overlay_);
-  lv_label_set_text(title, "Mini-split");
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 60, 17);
+  addHeader(
+      "Mini-split",
+      [](lv_event_t* e) { static_cast<UnitList*>(lv_event_get_user_data(e))->hideOverlay(); }, this);
 
   if (count_ == 0) {
     lv_obj_t* empty = lv_label_create(overlay_);
@@ -76,14 +65,6 @@ void UnitList::open(const char* const* names, int count, const char* selected, O
 
 void UnitList::onRowClicked(int index) {
   const char* name = names_[index];
-  close();
+  hideOverlay();
   if (onSelect_) onSelect_(context_, name);
-}
-
-void UnitList::close() {
-  if (!overlay_) return;
-  // We may be inside a row's own click event, where the list can't be deleted
-  // yet; delete_async removes it on the next LVGL cycle.
-  lv_obj_delete_async(overlay_);
-  overlay_ = nullptr;
 }

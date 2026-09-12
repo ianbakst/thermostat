@@ -15,12 +15,11 @@ static const int32_t GRID_TOP = 44;
 
 void Picker::open(const char* title, const PickerOption* options, int count, int selected,
                   OnSelect onSelect, void* context) {
-  if (overlay_) return;  // already open
+  if (!showOverlay()) return;  // already open
   onSelect_ = onSelect;
   context_ = context;
 
-  overlay_ = createOverlay();
-
+  // Centered title and no X: a picker is dismissed by choosing, or by waiting.
   lv_obj_t* heading = lv_label_create(overlay_);
   lv_label_set_text(heading, title);
   lv_obj_set_style_text_font(heading, &lv_font_montserrat_20, 0);
@@ -70,13 +69,8 @@ void Picker::onTileClicked(int index) {
 }
 
 void Picker::close() {
-  if (!overlay_) return;
-
-  // This can run inside a tile's own click event, where the overlay (and the
-  // tile) can't be deleted immediately. delete_async removes it on the next
-  // LVGL cycle.
-  lv_obj_delete_async(overlay_);
-  overlay_ = nullptr;
+  if (!isOpen()) return;
+  hideOverlay();
 
   // Deleting a timer from inside its own callback is fine in LVGL.
   lv_timer_delete(timeout_);

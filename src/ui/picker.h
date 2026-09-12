@@ -1,20 +1,18 @@
 #pragma once
 #include <lvgl.h>
 
+#include "ui/overlay_screen.h"
+
 struct PickerOption {
   const char* icon;   // ICON_* from ui/fonts/fonts.h
   const char* label;
   lv_color_t color;   // icon color, and the tile color when selected
 };
 
-// A full-screen grid of choices (up to 6, in 2 columns) that covers the
-// current screen. Tapping a choice closes the picker and reports its index.
-// If nothing is chosen within PICKER_TIMEOUT_MS, it closes by itself and
-// reports nothing.
-//
-// The picker is built when opened and deleted when closed, so it costs no
-// memory or drawing time the rest of the time.
-class Picker {
+// A full-screen grid of choices (up to 6, in 2 columns). Tapping a choice
+// closes the picker and reports its index. If nothing is chosen within
+// PICKER_TIMEOUT_MS, it closes by itself and reports nothing.
+class Picker : public OverlayScreen {
  public:
   // Called with the index of the chosen option. `context` is passed through
   // unchanged (typically the object that opened the picker).
@@ -27,7 +25,6 @@ class Picker {
   void onTileClicked(int index);
   void close();
 
-  lv_obj_t* overlay_ = nullptr;
   lv_timer_t* timeout_ = nullptr;
   OnSelect onSelect_ = nullptr;
   void* context_ = nullptr;
