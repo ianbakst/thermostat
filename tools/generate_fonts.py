@@ -56,6 +56,7 @@ ICONS = [
     ("fan-speed-2", "fan: middle"),
     ("fan-speed-3", "fan: medium"),
     ("fan-chevron-up", "fan: high"),
+    ("arrow-oscillating", "airflow button"),
     ("cog", "settings button"),
     ("triangle", "setpoint up"),
     ("triangle-down", "setpoint down"),

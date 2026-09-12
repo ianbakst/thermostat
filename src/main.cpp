@@ -71,6 +71,16 @@ static void setFanMode(FanMode fan) {
   ui.show(miniSplit.state());
 }
 
+static void setVane(VaneMode vane) {
+  miniSplit.setVane(vane, loopNowMs);
+  ui.show(miniSplit.state());
+}
+
+static void setWideVane(WideVaneMode wideVane) {
+  miniSplit.setWideVane(wideVane, loopNowMs);
+  ui.show(miniSplit.state());
+}
+
 // ---------------------------------------------------------------------------
 // Setup mode and the mini-split choice
 // ---------------------------------------------------------------------------
@@ -151,8 +161,8 @@ void setup() {
   settings = settingsStore.load();
 
   display.begin(settings.brightness);
-  ui.begin({setTargetTemp, setMode, setFanMode, startWifiSetup, startBrokerSetup, cancelSetup,
-            openUnitList, setUnit, setBrightness});
+  ui.begin({setTargetTemp, setMode, setFanMode, setVane, setWideVane, startWifiSetup,
+            startBrokerSetup, cancelSetup, openUnitList, setUnit, setBrightness});
   ui.showBrightness(settings.brightness);
   ui.show(miniSplit.state());
 

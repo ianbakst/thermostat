@@ -6,10 +6,11 @@
 #include "climate/climate.h"
 #include "config.h"
 #include "net/wifi_status.h"
+#include "ui/airflow_screen.h"
+#include "ui/list_screen.h"
 #include "ui/picker.h"
 #include "ui/settings_screen.h"
 #include "ui/setup_screen.h"
-#include "ui/unit_list.h"
 
 // The thermostat screen (portrait, 172x320):
 //
@@ -19,7 +20,7 @@
 //        70°F           target temperature; arrows (+/-) step it
 //         ▼
 //
-//   [mode]    [fan]     icons show the current setting; tap to pick
+//   [mode] [air] [fan]  icons show the current setting; tap to pick
 //
 // The background color shows the current mode and, for Heat, Cool and Dry,
 // whether the unit is running: orange while heating, dark red when idle;
@@ -40,6 +41,8 @@ class Ui {
     void (*setTargetTemp)(float temp);
     void (*setMode)(HvacMode mode);
     void (*setFanMode)(FanMode fan);
+    void (*setVane)(VaneMode vane);              // vertical louvre, from the airflow page
+    void (*setWideVane)(WideVaneMode wideVane);  // horizontal louvre
     void (*startWifiSetup)();        // "Wi-Fi setup" on the settings page
     void (*startBrokerSetup)();      // "MQTT setup": the same wizard from step 2
     void (*cancelSetup)();           // the X on the setup screen
@@ -77,6 +80,9 @@ class Ui {
   void openSettings();
   void openModePicker();
   void openFanPicker();
+  void openAirflow();
+  void openVaneList();
+  void openWideVaneList();
 
   Callbacks callbacks_{};
   ClimateState shown_;  // what's on screen; taps are computed from this
@@ -84,7 +90,18 @@ class Ui {
   Picker picker_;
   SettingsScreen settingsScreen_;
   SetupScreen setupScreen_;
-  UnitList unitList_;
+  AirflowScreen airflowScreen_;
+  ListScreen listScreen_;
+
+  // Filled in when a picker or list opens, to turn the row the user tapped
+  // back into the value it stands for. Only the options the unit actually has
+  // are listed, so a row's position isn't its enum value.
+  HvacMode pickerModes_[HVAC_MODE_COUNT]{};
+  FanMode pickerFans_[FAN_MODE_COUNT]{};
+  VaneMode vaneOptions_[VANE_MODE_COUNT]{};
+  const char* vaneLabels_[VANE_MODE_COUNT]{};
+  const char* wideVaneLabels_[WIDE_VANE_MODE_COUNT]{};
+  const char* const* unitNames_ = nullptr;
 
   lv_obj_t* screen_ = nullptr;
   lv_obj_t* currentLabel_ = nullptr;
@@ -96,4 +113,5 @@ class Ui {
   lv_obj_t* modeIcon_ = nullptr;
   lv_obj_t* fanButton_ = nullptr;
   lv_obj_t* fanIcon_ = nullptr;
+  lv_obj_t* airflowButton_ = nullptr;
 };

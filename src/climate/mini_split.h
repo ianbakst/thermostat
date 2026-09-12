@@ -27,6 +27,10 @@
 //   mitsubishi2mqtt/<name>/mode/set        we send off, heat, cool, heat_cool, dry, fan_only
 //   mitsubishi2mqtt/<name>/temp/set        we send the setpoint, e.g. 72
 //   mitsubishi2mqtt/<name>/fan/set         we send auto, diffuse, low, middle, medium, high
+//   mitsubishi2mqtt/<name>/vane/set        we send AUTO, 1-5, SWING (the vertical louvre,
+//                                          which HA shows as the swing mode)
+//   mitsubishi2mqtt/<name>/wideVane/set    we send <<, <, |, >, >>, <>, SWING (the horizontal
+//                                          louvre, which HA doesn't expose at all)
 class MiniSplit {
  public:
   explicit MiniSplit(MqttConnection& mqtt) : mqtt_(mqtt) {}
@@ -49,6 +53,8 @@ class MiniSplit {
   void setTargetTemp(float temp, unsigned long nowMs);
   void setMode(HvacMode mode, unsigned long nowMs);
   void setFanMode(FanMode fan, unsigned long nowMs);
+  void setVane(VaneMode vane, unsigned long nowMs);
+  void setWideVane(WideVaneMode wideVane, unsigned long nowMs);
 
  private:
   void onMessage(const char* topic, const char* payload);
@@ -66,6 +72,8 @@ class MiniSplit {
   Tracked<float> target_{state_.targetTemp};
   Tracked<HvacMode> mode_{state_.mode};
   Tracked<FanMode> fan_{state_.fan};
+  Tracked<VaneMode> vane_{state_.vane};
+  Tracked<WideVaneMode> wideVane_{state_.wideVane};
   bool targetSendDue_ = false;  // a setpoint change is waiting for the taps to pause
 
   bool hasConfig_ = false;
@@ -81,6 +89,8 @@ class MiniSplit {
   char modeSetTopic_[96] = "";
   char tempSetTopic_[96] = "";
   char fanSetTopic_[96] = "";
+  char vaneSetTopic_[96] = "";
+  char wideVaneSetTopic_[96] = "";
 
   // Units seen on the discovery topic. unitNames_ points into units_ so the
   // list can be handed to the UI as it is.

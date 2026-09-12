@@ -134,7 +134,8 @@ src/
     picker.h/.cpp         full-screen option grid (mode, fan)
     settings_screen.h/.cpp settings page: scrolling Wi-Fi, MQTT, mini-split, brightness
     setup_screen.h/.cpp   setup mode screen (QR code to join, step progress)
-    unit_list.h/.cpp      scrollable list of mini-splits to pick from
+    list_screen.h/.cpp    scrollable list of labelled choices (units, louvres)
+    airflow_screen.h/.cpp both louvres, behind the bottom-centre button
     widgets.h/.cpp        shared flat button, overlay + icon helpers
     fonts/                GENERATED icon fonts, temperature font, fonts.h (see below)
 tools/

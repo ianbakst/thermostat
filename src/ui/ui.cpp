@@ -113,15 +113,19 @@ static lv_obj_t* makeStepArrow(lv_obj_t* parent, const char* icon, const char* s
 // color that suits every background. Instead it's translucent white: a
 // lighter tint of whatever color is behind it. Disabled fades it, icon and
 // all.
-static lv_obj_t* makeCornerButton(lv_obj_t* parent, lv_align_t align, lv_obj_t** icon) {
-  const int32_t size = 56;
+static lv_obj_t* makeBottomButton(lv_obj_t* parent, lv_align_t align, int32_t width,
+                                  lv_obj_t** icon) {
+  const int32_t height = 56;
   const int32_t margin = 8;
 
-  lv_obj_t* button = createFlatButton(parent, size, size);
+  lv_obj_t* button = createFlatButton(parent, width, height);
   lv_obj_set_style_bg_color(button, lv_color_white(), 0);
   lv_obj_set_style_bg_opa(button, LV_OPA_20, 0);
   lv_obj_set_style_opa(button, LV_OPA_40, LV_STATE_DISABLED);
-  lv_obj_align(button, align, align == LV_ALIGN_BOTTOM_LEFT ? margin : -margin, -margin);
+  const int32_t x = align == LV_ALIGN_BOTTOM_LEFT    ? margin
+                    : align == LV_ALIGN_BOTTOM_RIGHT ? -margin
+                                                     : 0;  // centred
+  lv_obj_align(button, align, x, -margin);
   // The screen is ~0.1mm per pixel, so these small buttons also accept taps
   // a few pixels outside their edges.
   lv_obj_set_ext_click_area(button, 8);
@@ -193,15 +197,26 @@ void Ui::begin(const Callbacks& callbacks) {
       downButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->onStep(-1); },
       LV_EVENT_CLICKED, this);
 
-  // Bottom corners: mode (left) and fan (right).
-  modeButton_ = makeCornerButton(scr, LV_ALIGN_BOTTOM_LEFT, &modeIcon_);
+  // Bottom row: mode (left), airflow (centre), fan (right). 52 + 40 + 52 with
+  // the 8px side margins leaves 6px between each — at 56 + 44 + 56 they sat
+  // flush against each other and read as one bar. Every target is still 40px
+  // or wider, and each takes taps 8px beyond its edges. The airflow icon never
+  // changes: there are two louvres behind it, so no one glyph could show both.
+  modeButton_ = makeBottomButton(scr, LV_ALIGN_BOTTOM_LEFT, 52, &modeIcon_);
   lv_obj_add_event_cb(
       modeButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->openModePicker(); },
       LV_EVENT_CLICKED, this);
 
-  fanButton_ = makeCornerButton(scr, LV_ALIGN_BOTTOM_RIGHT, &fanIcon_);
+  fanButton_ = makeBottomButton(scr, LV_ALIGN_BOTTOM_RIGHT, 52, &fanIcon_);
   lv_obj_add_event_cb(
       fanButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->openFanPicker(); },
+      LV_EVENT_CLICKED, this);
+
+  lv_obj_t* airflowIcon = nullptr;
+  airflowButton_ = makeBottomButton(scr, LV_ALIGN_BOTTOM_MID, 40, &airflowIcon);
+  lv_label_set_text(airflowIcon, ICON_ARROW_OSCILLATING);
+  lv_obj_add_event_cb(
+      airflowButton_, [](lv_event_t* e) { static_cast<Ui*>(lv_event_get_user_data(e))->openAirflow(); },
       LV_EVENT_CLICKED, this);
 
   show(shown_);  // "--" and locked until the mini-split reports in
@@ -235,8 +250,10 @@ void Ui::show(const ClimateState& state) {
 
   lv_label_set_text(fanIcon_, fanIcon(state.fan));
   setEnabled(fanButton_, online);
+  setEnabled(airflowButton_, online);
 
   settingsScreen_.showClimate(state.link, state.unitName);
+  airflowScreen_.showPositions(vaneName(state.vane), wideVaneName(state.wideVane));
 }
 
 void Ui::openSettings() {
@@ -267,9 +284,65 @@ void Ui::showSetup(const char* qrData, const char* line1, const char* line2, con
 void Ui::showSetupProgress(const char* text) { setupScreen_.showProgress(text); }
 
 void Ui::showUnits(const char* const* names, int count, const char* selected) {
-  unitList_.open(
-      names, count, selected,
-      [](void* context, const char* name) { static_cast<Ui*>(context)->callbacks_.setUnit(name); },
+  unitNames_ = names;
+
+  int selectedIndex = -1;
+  for (int i = 0; i < count; i++) {
+    if (strcmp(names[i], selected) == 0) selectedIndex = i;
+  }
+
+  listScreen_.open(
+      "Mini-split", names, count, selectedIndex,
+      "No mini-splits found yet. They appear once the panel reaches the MQTT broker; check the "
+      "Wi-Fi section for why it hasn't.",
+      [](void* context, int index) {
+        auto* ui = static_cast<Ui*>(context);
+        ui->callbacks_.setUnit(ui->unitNames_[index]);
+      },
+      this);
+}
+
+void Ui::openAirflow() {
+  airflowScreen_.open(
+      {[](void* context) { static_cast<Ui*>(context)->openVaneList(); },
+       [](void* context) { static_cast<Ui*>(context)->openWideVaneList(); }},
+      this, vaneName(shown_.vane), wideVaneName(shown_.wideVane));
+}
+
+void Ui::openVaneList() {
+  int count = 0;
+  int selected = 0;
+  for (int i = 0; i < VANE_MODE_COUNT; i++) {
+    if (!isSupported(shown_.vaneMask, i)) continue;
+    const auto vane = static_cast<VaneMode>(i);
+    if (vane == shown_.vane) selected = count;
+    vaneOptions_[count] = vane;
+    vaneLabels_[count] = vaneName(vane);
+    count++;
+  }
+
+  listScreen_.open(
+      "Vertical", vaneLabels_, count, selected,
+      "This unit doesn't report any vane positions.",
+      [](void* context, int index) {
+        auto* ui = static_cast<Ui*>(context);
+        ui->callbacks_.setVane(ui->vaneOptions_[index]);
+      },
+      this);
+}
+
+void Ui::openWideVaneList() {
+  // The horizontal louvre isn't in the unit's discovery config, so there's no
+  // advertised list to filter against: every position is on offer.
+  for (int i = 0; i < WIDE_VANE_MODE_COUNT; i++) {
+    wideVaneLabels_[i] = wideVaneName(static_cast<WideVaneMode>(i));
+  }
+
+  listScreen_.open(
+      "Horizontal", wideVaneLabels_, WIDE_VANE_MODE_COUNT, static_cast<int>(shown_.wideVane), "",
+      [](void* context, int index) {
+        static_cast<Ui*>(context)->callbacks_.setWideVane(static_cast<WideVaneMode>(index));
+      },
       this);
 }
 
@@ -296,30 +369,48 @@ void Ui::showWifiStatus(const WifiStatus& status) {
   settingsScreen_.showWifiStatus(status);
 }
 
+// Both pickers show only what the unit says it has, so the row tapped has to
+// be mapped back through the list that was built (see pickerModes_).
 void Ui::openModePicker() {
   PickerOption options[HVAC_MODE_COUNT];
+  int count = 0;
+  int selected = 0;
   for (int i = 0; i < HVAC_MODE_COUNT; i++) {
+    if (!isSupported(shown_.modeMask, i)) continue;
     const auto mode = static_cast<HvacMode>(i);
-    options[i] = {modeIcon(mode), modeName(mode), modeColor(mode)};
+    if (mode == shown_.mode) selected = count;
+    pickerModes_[count] = mode;
+    options[count] = {modeIcon(mode), modeName(mode), modeColor(mode)};
+    count++;
   }
+
   picker_.open(
-      "Mode", options, HVAC_MODE_COUNT, static_cast<int>(shown_.mode),
+      "Mode", options, count, selected,
       [](void* context, int index) {
-        static_cast<Ui*>(context)->callbacks_.setMode(static_cast<HvacMode>(index));
+        auto* ui = static_cast<Ui*>(context);
+        ui->callbacks_.setMode(ui->pickerModes_[index]);
       },
       this);
 }
 
 void Ui::openFanPicker() {
   PickerOption options[FAN_MODE_COUNT];
+  int count = 0;
+  int selected = 0;
   for (int i = 0; i < FAN_MODE_COUNT; i++) {
+    if (!isSupported(shown_.fanMask, i)) continue;
     const auto fan = static_cast<FanMode>(i);
-    options[i] = {fanIcon(fan), fanModeName(fan), lv_palette_main(LV_PALETTE_BLUE)};
+    if (fan == shown_.fan) selected = count;
+    pickerFans_[count] = fan;
+    options[count] = {fanIcon(fan), fanModeName(fan), lv_palette_main(LV_PALETTE_BLUE)};
+    count++;
   }
+
   picker_.open(
-      "Fan", options, FAN_MODE_COUNT, static_cast<int>(shown_.fan),
+      "Fan", options, count, selected,
       [](void* context, int index) {
-        static_cast<Ui*>(context)->callbacks_.setFanMode(static_cast<FanMode>(index));
+        auto* ui = static_cast<Ui*>(context);
+        ui->callbacks_.setFanMode(ui->pickerFans_[index]);
       },
       this);
 }
