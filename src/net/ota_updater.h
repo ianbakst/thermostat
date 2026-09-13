@@ -35,8 +35,11 @@ class OtaUpdater {
   void setChannel(OtaChannel channel);
 
   // Ask now, from the settings page's button. Ignored while a check or a
-  // download is already running.
-  void check();
+  // download is already running. `nowMs` is the loop's clock for this pass
+  // (see main.cpp): every check, however it was asked for, pushes the next
+  // automatic one a full interval out, so a manual check can't be chased by a
+  // scheduled one seconds later.
+  void check(unsigned long nowMs);
 
   // Download and install the version the last check found. Ignored unless
   // the state is Available.

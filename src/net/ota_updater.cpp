@@ -57,6 +57,8 @@ static bool httpGet(const char* url, char* out, size_t outSize, char* error, siz
   config.url = url;
   config.method = HTTP_METHOD_GET;
   config.timeout_ms = OTA_HTTP_TIMEOUT_MS;
+  config.buffer_size = OTA_HTTP_RX_BUFFER;
+  config.buffer_size_tx = OTA_HTTP_TX_BUFFER;
   config.crt_bundle_attach = esp_crt_bundle_attach;
   config.event_handler = onHttpEvent;
   config.user_data = &body;
@@ -115,7 +117,11 @@ void OtaUpdater::setChannel(OtaChannel channel) {
   publish(OtaState::Idle, "", "");
 }
 
-void OtaUpdater::check() { start(Job::Check); }
+void OtaUpdater::check(unsigned long nowMs) {
+  if (!start(Job::Check)) return;
+  lastCheckMs_ = nowMs;
+  checkedOnce_ = true;
+}
 
 void OtaUpdater::install() {
   if (status().state != OtaState::Available) return;
@@ -126,6 +132,13 @@ bool OtaUpdater::installing() const { return status().state == OtaState::Downloa
 
 bool OtaUpdater::start(Job job) {
   if (running_.load()) return false;
+
+  // Once an image is installed, the only thing left to do is restart into it.
+  // Installed is a hand-off rather than a resting place: loop() watches for it
+  // and restarts the panel. Letting anything else start here would publish
+  // over it before loop() had seen it, leaving a finished update sitting on a
+  // panel that never reboots.
+  if (status().state == OtaState::Installed) return false;
 
   job_ = job;
   publish(job == Job::Check ? OtaState::Checking : OtaState::Downloading, status().version, "");
@@ -193,6 +206,8 @@ void OtaUpdater::doInstall() {
   esp_http_client_config_t http = {};
   http.url = downloadUrl_;
   http.timeout_ms = OTA_HTTP_TIMEOUT_MS;
+  http.buffer_size = OTA_HTTP_RX_BUFFER;
+  http.buffer_size_tx = OTA_HTTP_TX_BUFFER;
   http.crt_bundle_attach = esp_crt_bundle_attach;
   http.keep_alive_enable = true;
   http.user_agent = "thermostat/" FIRMWARE_VERSION;
@@ -265,9 +280,13 @@ bool OtaUpdater::tick(unsigned long nowMs, bool networkReady) {
   if (networkReady && !running_.load()) {
     const unsigned long due = checkedOnce_ ? OTA_CHECK_INTERVAL_MS : OTA_FIRST_CHECK_DELAY_MS;
     if (nowMs - lastCheckMs_ >= due) {
-      lastCheckMs_ = nowMs;
-      checkedOnce_ = true;
-      if (status().state != OtaState::Available) check();  // don't nag over an offer already made
+      // check() moves the schedule on, so this only has to decide whether to
+      // ask at all: an offer already made shouldn't be re-made every day.
+      if (status().state != OtaState::Available) {
+        check(nowMs);
+      } else {
+        lastCheckMs_ = nowMs;
+      }
     }
   }
 

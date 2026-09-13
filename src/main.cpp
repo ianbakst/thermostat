@@ -142,7 +142,7 @@ static void setUnit(const char* name) {
 // picks up the answer. Showing the status straight away is what turns the
 // button into "Checking..." on the tap rather than a moment later.
 static void checkForUpdate() {
-  ota.check();
+  ota.check(loopNowMs);
   ui.showOta(ota.status(), settings.otaChannel);
 }
 
@@ -159,7 +159,7 @@ static void setOtaChannel(OtaChannel channel) {
   settings.otaChannel = channel;
   settingsStore.saveOtaChannel(channel);
   ota.setChannel(channel);
-  ota.check();
+  ota.check(loopNowMs);
   ui.showOta(ota.status(), settings.otaChannel);
 }
 
