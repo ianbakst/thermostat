@@ -1,0 +1,134 @@
+# Publishes the firmware panels update themselves from.
+#
+# Two channels, each tied to a place in the repo:
+#
+#   stable   a tag v1.2.3 (pushed from main). Becomes a normal GitHub
+#            release, which is what /releases/latest/ resolves to, which is
+#            where a panel on the stable channel looks.
+#   beta     any push to dev. Rebuilds one rolling prerelease tagged `beta`,
+#            so its download URLs never change and a panel on the beta
+#            channel always finds the newest dev build there. Prereleases
+#            don't count as "latest", so this never reaches a stable panel.
+#
+# Every release carries three files:
+#
+#   manifest.json         version + download URL; the only thing a panel
+#                         fetches when it checks (see tools/make_manifest.py)
+#   firmware.bin          the app image, what a panel installs over the air
+#   firmware.factory.bin  bootloader + partition table + app, for flashing a
+#                         new panel over USB at offset 0
+name: Release
+
+on:
+  push:
+    branches:
+      - dev
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates releases and moves the beta tag
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_DIR: .pio/build/esp32c6-touch-lcd
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the beta version is numbered from the last tag
+
+      - name: Work out the channel and version
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            # A tagged release: the tag is the version, minus its leading v.
+            channel=stable
+            tag="${GITHUB_REF_NAME}"
+            version="${tag#v}"
+            prerelease=false
+          else
+            # A dev build: numbered after the last release it's ahead of, so
+            # 1.2.0-beta.41 is plainly "past 1.2.0, build 41". The run number
+            # only ever goes up, so betas sort the way they were built.
+            channel=beta
+            tag=beta
+            base="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo v0.0.0)"
+            version="${base#v}-beta.${GITHUB_RUN_NUMBER}"
+            prerelease=true
+          fi
+          {
+            echo "channel=${channel}"
+            echo "tag=${tag}"
+            echo "version=${version}"
+            echo "prerelease=${prerelease}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building ${version} for the ${channel} channel"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+
+      - run: pip install --upgrade platformio
+
+      # tools/firmware_version.py reads this and compiles it in as
+      # FIRMWARE_VERSION, which is the version the panel compares against the
+      # manifest below. The two come from the same variable, so they can't
+      # disagree.
+      - name: Build
+        env:
+          FIRMWARE_VERSION: ${{ steps.version.outputs.version }}
+        run: pio run
+
+      - name: Write the manifest
+        run: |
+          python3 tools/make_manifest.py \
+            --version "${{ steps.version.outputs.version }}" \
+            --channel "${{ steps.version.outputs.channel }}" \
+            --tag "${{ steps.version.outputs.tag }}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --firmware "${BUILD_DIR}/firmware.bin" \
+            --out manifest.json
+
+      # The beta release is replaced rather than added to, so its tag moves to
+      # the commit just built and the old assets go with it. Panels checking
+      # during the few seconds this takes see a failed check and try again.
+      - name: Publish the beta prerelease
+        if: steps.version.outputs.channel == 'beta'
+        run: |
+          set -euo pipefail
+          gh release delete beta --yes --cleanup-tag || true
+          gh release create beta \
+            --prerelease \
+            --target "${GITHUB_SHA}" \
+            --title "Beta ${{ steps.version.outputs.version }}" \
+            --notes "Built from dev at ${GITHUB_SHA}. Rebuilt on every push, so this tag always points at the newest dev build." \
+            manifest.json "${BUILD_DIR}/firmware.bin" "${BUILD_DIR}/firmware.factory.bin"
+
+      # Tags are permanent, so a re-run updates the release in place instead of
+      # replacing it.
+      - name: Publish the release
+        if: steps.version.outputs.channel == 'stable'
+        run: |
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" --clobber \
+              manifest.json "${BUILD_DIR}/firmware.bin" "${BUILD_DIR}/firmware.factory.bin"
+          else
+            gh release create "$tag" \
+              --title "$tag" \
+              --generate-notes \
+              manifest.json "${BUILD_DIR}/firmware.bin" "${BUILD_DIR}/firmware.factory.bin"
+          fi

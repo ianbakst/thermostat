@@ -11,6 +11,7 @@ static const char* KEY_MQTT_USER = "mqtt_user";
 static const char* KEY_MQTT_PASS = "mqtt_pass";
 static const char* KEY_UNIT = "unit";
 static const char* KEY_BRIGHTNESS = "brightness";
+static const char* KEY_OTA_CHANNEL = "ota_channel";
 
 void SettingsStore::begin() { prefs_.begin(NAMESPACE, false /* read-write */); }
 
@@ -30,6 +31,11 @@ DeviceSettings SettingsStore::load() {
   loadString(prefs_, KEY_UNIT, settings.unitName, sizeof(settings.unitName));
   settings.mqttPort = prefs_.getUShort(KEY_MQTT_PORT, settings.mqttPort);
   settings.brightness = prefs_.getUChar(KEY_BRIGHTNESS, settings.brightness);
+  // Anything that isn't Beta means Stable, so a key written by a later version
+  // with more channels can't leave this one looking at a URL it doesn't have.
+  settings.otaChannel = prefs_.getUChar(KEY_OTA_CHANNEL, 0) == uint8_t(OtaChannel::Beta)
+                            ? OtaChannel::Beta
+                            : OtaChannel::Stable;
   return settings;
 }
 
@@ -43,10 +49,15 @@ void SettingsStore::save(const DeviceSettings& settings) {
   prefs_.putString(KEY_MQTT_PASS, settings.mqttPassword);
   prefs_.putString(KEY_UNIT, settings.unitName);
   prefs_.putUChar(KEY_BRIGHTNESS, settings.brightness);
+  prefs_.putUChar(KEY_OTA_CHANNEL, uint8_t(settings.otaChannel));
 }
 
 void SettingsStore::saveUnitName(const char* name) { prefs_.putString(KEY_UNIT, name); }
 
 void SettingsStore::saveBrightness(uint8_t brightness) {
   prefs_.putUChar(KEY_BRIGHTNESS, brightness);
+}
+
+void SettingsStore::saveOtaChannel(OtaChannel channel) {
+  prefs_.putUChar(KEY_OTA_CHANNEL, uint8_t(channel));
 }

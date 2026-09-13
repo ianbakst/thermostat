@@ -16,6 +16,7 @@
 #include "config.h"
 #include "display/display.h"
 #include "net/mqtt_connection.h"
+#include "net/ota_updater.h"
 #include "net/provisioning.h"
 #include "net/wifi_connection.h"
 #include "storage/settings_store.h"
@@ -28,6 +29,7 @@ static WifiConnection wifi;
 static MqttConnection mqtt;
 static MiniSplit miniSplit(mqtt);  // the unit this panel controls
 static Provisioning provisioning(mqtt, miniSplit);  // setup mode tests both
+static OtaUpdater ota;
 
 // Everything this panel was told about its installation. The network and MQTT
 // modules keep pointers into it, so it lives as long as the program does.
@@ -132,6 +134,35 @@ static void setUnit(const char* name) {
   restartSoon("mini-split changed");
 }
 
+// ---------------------------------------------------------------------------
+// Firmware updates
+// ---------------------------------------------------------------------------
+
+// These only ask: the updater does the work in a task of its own and loop()
+// picks up the answer. Showing the status straight away is what turns the
+// button into "Checking..." on the tap rather than a moment later.
+static void checkForUpdate() {
+  ota.check();
+  ui.showOta(ota.status(), settings.otaChannel);
+}
+
+static void installUpdate() {
+  ota.install();
+  ui.showOta(ota.status(), settings.otaChannel);
+}
+
+static void openChannelList() { ui.showChannels(settings.otaChannel); }
+
+// Unlike the mini-split, this doesn't need a restart: nothing is connected to
+// a channel, it's only where the next check looks. So look now.
+static void setOtaChannel(OtaChannel channel) {
+  settings.otaChannel = channel;
+  settingsStore.saveOtaChannel(channel);
+  ota.setChannel(channel);
+  ota.check();
+  ui.showOta(ota.status(), settings.otaChannel);
+}
+
 // Dragging the slider follows the backlight live; only letting go writes it to
 // flash, so a drag doesn't leave a trail of saves behind it.
 static void setBrightness(uint8_t value, bool save) {
@@ -159,10 +190,12 @@ void setup() {
 
   settingsStore.begin();
   settings = settingsStore.load();
+  ota.begin(settings.otaChannel);
 
   display.begin(settings.brightness);
   ui.begin({setTargetTemp, setMode, setFanMode, setVane, setWideVane, startWifiSetup,
-            startBrokerSetup, cancelSetup, openUnitList, setUnit, setBrightness});
+            startBrokerSetup, cancelSetup, openUnitList, setUnit, checkForUpdate, installUpdate,
+            openChannelList, setOtaChannel, setBrightness});
   ui.showBrightness(settings.brightness);
   ui.show(miniSplit.state());
 
@@ -223,6 +256,21 @@ void loop() {
   }
 
   if (miniSplit.tick(now)) ui.show(miniSplit.state());
+
+  // Firmware updates. Setup mode is off testing a network and a broker of its
+  // own, so it keeps the radio to itself and the panel isn't offered an update
+  // in the middle of being configured.
+  const bool networkReady = wifi.connected() && !provisioning.active();
+  if (ota.tick(now, networkReady)) {
+    ui.showOta(ota.status(), settings.otaChannel);
+    // A download takes a while and shows how far it's got, so the backlight
+    // stays on for it — but only for that, since blocking sleep also wakes the
+    // screen, and a daily check shouldn't light up a dark room. Setup mode is
+    // already holding the backlight on for its QR code and would have it
+    // turned back off here.
+    if (!provisioning.active()) display.setSleepAllowed(!ota.installing());
+    if (ota.status().state == OtaState::Installed) restartSoon("update installed");
+  }
 
   display.tick();
   delay(LVGL_LOOP_DELAY_MS);

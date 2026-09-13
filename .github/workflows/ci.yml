@@ -1,0 +1,50 @@
+# Builds every branch and pull request, so a change that doesn't compile is
+# caught before it can reach a panel.
+#
+# `dev` and tags are left out on purpose: release.yml builds those, and
+# building them twice would only cost time. Each run leaves firmware.bin
+# behind as an artifact, which is the easy way to flash a work-in-progress
+# branch over USB without a local toolchain.
+name: CI
+
+on:
+  push:
+    branches-ignore:
+      - dev
+    tags-ignore:
+      - "**"
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tools/firmware_version.py runs `git describe`
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The toolchain and the pinned pioarduino platform are ~1GB and don't
+      # change between runs; the key is the config that pins them.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+
+      - run: pip install --upgrade platformio
+
+      - name: Build
+        run: pio run
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: |
+            .pio/build/esp32c6-touch-lcd/firmware.bin
+            .pio/build/esp32c6-touch-lcd/firmware.factory.bin

@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "config.h"
+#include "net/ota_status.h"
 
 // Everything the panel is told about its installation. All of it is entered
 // on the setup page (see src/net/provisioning.h), except the mini-split,
@@ -28,6 +29,7 @@ struct DeviceSettings {
   char mqttPassword[64] = "";
   char unitName[33] = "";  // e.g. "OfficeHVAC"; empty until one is picked
   uint8_t brightness = DEFAULT_BRIGHTNESS;  // backlight while awake, from the settings page
+  OtaChannel otaChannel = OtaChannel::Stable;  // which firmware releases to be offered
 
   // Whether there's a network to try. Without one, the panel starts in setup
   // mode.
@@ -46,6 +48,7 @@ class SettingsStore {
   void save(const DeviceSettings& settings);
   void saveUnitName(const char* name);
   void saveBrightness(uint8_t brightness);
+  void saveOtaChannel(OtaChannel channel);
 
  private:
   Preferences prefs_;

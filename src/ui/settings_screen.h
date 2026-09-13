@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "climate/climate.h"
+#include "net/ota_status.h"
 #include "net/wifi_status.h"
 #include "ui/overlay_screen.h"
 
@@ -31,6 +32,13 @@
 //   Online
 //   [ Change ]              pick from the units Home Assistant advertises
 //
+//   Firmware
+//   1.4.2 (stable)
+//   Up to date
+//   [ Check for updates ]   becomes [ Install 1.5.0 ] once there's one to
+//                           install; needs Wi-Fi, so it's greyed out without it
+//   [ Channel: Stable ]     stable releases, or the rolling beta
+//
 // The page is built when opened and deleted when closed. While it's closed it
 // just remembers the latest status to show next time. Like the rest of the UI
 // it does nothing itself: the buttons and the slider call back to the owner.
@@ -40,6 +48,9 @@ class SettingsScreen : public OverlayScreen {
     void (*startWifiSetup)(void* context);
     void (*startBrokerSetup)(void* context);
     void (*openUnitList)(void* context);
+    void (*checkForUpdate)(void* context);
+    void (*installUpdate)(void* context);
+    void (*openChannelList)(void* context);
     // While dragging, `save` is false: the brightness follows the slider but
     // isn't written to flash until the finger lifts.
     void (*setBrightness)(void* context, uint8_t value, bool save);
@@ -50,6 +61,7 @@ class SettingsScreen : public OverlayScreen {
   void showWifiStatus(const WifiStatus& status);
   void showMqtt(const char* broker, bool connected, bool loginRefused);
   void showClimate(ClimateLink link, const char* unitName);
+  void showOta(const OtaStatus& status, OtaChannel channel);
 
  private:
   // The show* methods above store what they're given; these draw the stored
@@ -58,12 +70,16 @@ class SettingsScreen : public OverlayScreen {
   void renderWifi();
   void renderMqtt();
   void renderClimate();
+  void renderOta();
   void close();
 
   lv_obj_t* wifiLabel_ = nullptr;
   lv_obj_t* mqttLabel_ = nullptr;
   lv_obj_t* mqttButton_ = nullptr;
   lv_obj_t* climateLabel_ = nullptr;
+  lv_obj_t* otaLabel_ = nullptr;
+  lv_obj_t* otaButton_ = nullptr;
+  lv_obj_t* channelLabel_ = nullptr;
 
   WifiStatus wifiStatus_;
   char broker_[80] = "";
@@ -71,6 +87,8 @@ class SettingsScreen : public OverlayScreen {
   bool mqttLoginRefused_ = false;
   ClimateLink climateLink_ = ClimateLink::NoUnit;
   char unitName_[33] = "";
+  OtaStatus ota_;
+  OtaChannel otaChannel_ = OtaChannel::Stable;
 
   Callbacks callbacks_{};
   void* context_ = nullptr;

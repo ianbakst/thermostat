@@ -9,6 +9,9 @@
 .vscode/launch.json
 .vscode/ipch/
 
+# Written by tools/make_manifest.py; the real one is a release asset
+manifest.json
+
 # OS
 .DS_Store
 

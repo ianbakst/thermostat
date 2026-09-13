@@ -261,6 +261,9 @@ void Ui::openSettings() {
       {[](void* context) { static_cast<Ui*>(context)->callbacks_.startWifiSetup(); },
        [](void* context) { static_cast<Ui*>(context)->callbacks_.startBrokerSetup(); },
        [](void* context) { static_cast<Ui*>(context)->callbacks_.openUnitList(); },
+       [](void* context) { static_cast<Ui*>(context)->callbacks_.checkForUpdate(); },
+       [](void* context) { static_cast<Ui*>(context)->callbacks_.installUpdate(); },
+       [](void* context) { static_cast<Ui*>(context)->callbacks_.openChannelList(); },
        [](void* context, uint8_t value, bool save) {
          static_cast<Ui*>(context)->brightness_ = value;
          static_cast<Ui*>(context)->callbacks_.setBrightness(value, save);
@@ -273,6 +276,10 @@ void Ui::showMqttStatus(const char* broker, bool connected, bool loginRefused) {
 }
 
 void Ui::showBrightness(uint8_t brightness) { brightness_ = brightness; }
+
+void Ui::showOta(const OtaStatus& status, OtaChannel channel) {
+  settingsScreen_.showOta(status, channel);
+}
 
 void Ui::showSetup(const char* qrData, const char* line1, const char* line2, const char* hint,
                    bool cancellable) {
@@ -298,6 +305,20 @@ void Ui::showUnits(const char* const* names, int count, const char* selected) {
       [](void* context, int index) {
         auto* ui = static_cast<Ui*>(context);
         ui->callbacks_.setUnit(ui->unitNames_[index]);
+      },
+      this);
+}
+
+void Ui::showChannels(OtaChannel current) {
+  // Fixed rows, so a row's position is the channel and there's no mapping to
+  // keep (unlike the lists above, whose contents depend on the unit).
+  static const char* const labels[] = {"Stable", "Beta"};
+
+  listScreen_.open(
+      "Update channel", labels, 2, current == OtaChannel::Beta ? 1 : 0, "",
+      [](void* context, int index) {
+        static_cast<Ui*>(context)->callbacks_.setOtaChannel(index == 1 ? OtaChannel::Beta
+                                                                      : OtaChannel::Stable);
       },
       this);
 }

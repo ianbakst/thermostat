@@ -7,7 +7,7 @@
 // https://docs.waveshare.com/ESP32-C6-Touch-LCD-1.47
 //
 // These are `constexpr`, not `#define`: they carry a type, they respect scope,
-// and they show up in a debugger. The two exceptions are marked below — they're
+// and they show up in a debugger. The exceptions are marked below — they're
 // pasted into string literals, which only a macro can do.
 //
 // Nothing private lives here. The network, its password, the panel's name and
@@ -111,9 +111,9 @@ constexpr int MQTT_BUFFER_SIZE = 4096;
 // Assistant advertises, and saved in flash. Its temperature unit, setpoint
 // limits and step come from the unit itself.
 //
-// These two are macros, not constexpr: they're pasted into topic string
-// literals ("homeassistant" "/climate/+/config"), which needs the
-// preprocessor.
+// These two are macros, not constexpr (see the note at the top): they're
+// pasted into topic string literals ("homeassistant" "/climate/+/config"),
+// which needs the preprocessor.
 #define MINI_SPLIT_TOPIC_PREFIX "mitsubishi2mqtt"
 #define HA_DISCOVERY_PREFIX     "homeassistant"
 
@@ -127,6 +127,52 @@ constexpr unsigned long SETPOINT_SEND_DELAY_MS = 1'000;
 // for up to this long, so the screen doesn't jump back while the unit
 // catches up.
 constexpr unsigned long PENDING_HOLD_MS = 5'000;
+
+// ---------------------------------------------------------------------------
+// Firmware updates (OTA)
+// ---------------------------------------------------------------------------
+// What this build calls itself, injected by tools/firmware_version.py from the
+// git tag (or from the version the release workflow made up). The updater
+// compares it against the version in the channel's manifest to decide whether
+// there's anything to install. A macro, not constexpr: it's pasted into the
+// User-Agent string literal, and a build with no git history to describe falls
+// back to the value below.
+#ifndef FIRMWARE_VERSION
+#define FIRMWARE_VERSION "dev"
+#endif
+
+// Where each channel says what it has. Both are small JSON files (written by
+// tools/make_manifest.py) attached to a GitHub release:
+//
+//   stable  the newest tagged release off main. "latest" is GitHub resolving
+//           "the newest release that isn't a prerelease" for us.
+//   beta    the rolling prerelease the `beta` tag is moved to on every push
+//           to dev.
+//
+// These name the repo the firmware comes from, not anything about your home.
+constexpr const char* OTA_STABLE_MANIFEST_URL =
+    "https://github.com/ianbakst/thermostat/releases/latest/download/manifest.json";
+constexpr const char* OTA_BETA_MANIFEST_URL =
+    "https://github.com/ianbakst/thermostat/releases/download/beta/manifest.json";
+
+constexpr unsigned long OTA_CHECK_INTERVAL_MS = 24UL * 60 * 60 * 1'000;  // once a day
+constexpr unsigned long OTA_FIRST_CHECK_DELAY_MS = 60'000;   // after the network has settled
+constexpr int OTA_HTTP_TIMEOUT_MS = 15'000;
+constexpr size_t OTA_MANIFEST_MAX_BYTES = 1'024;             // a manifest is a few hundred bytes
+
+// A freshly installed image is on trial: the bootloader keeps the firmware it
+// replaced until the new one has run this long with the network up. One that
+// crashes on the way up, or that can't join Wi-Fi, is rolled back on the next
+// boot rather than stranding a panel that's only reachable over the air.
+constexpr unsigned long OTA_SELF_TEST_MS = 60'000;
+
+// The download runs in a task of its own so the UI keeps drawing. The stack
+// (in bytes, as ESP-IDF counts it) has to hold a TLS handshake against the
+// certificate bundle, which is most of it; the priority matches the Arduino
+// loop task, so neither starves the other. The task only exists while a check
+// or a download is running.
+constexpr uint32_t OTA_TASK_STACK = 12'288;
+constexpr unsigned OTA_TASK_PRIORITY = 1;
 
 // ---------------------------------------------------------------------------
 // Timing

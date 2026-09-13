@@ -38,6 +38,10 @@ static lv_obj_t* makeActionButton(lv_obj_t* parent, const char* text) {
   return button;
 }
 
+// The label inside a button made by makeActionButton, for the ones whose text
+// changes with what's going on.
+static lv_obj_t* buttonLabel(lv_obj_t* button) { return lv_obj_get_child(button, 0); }
+
 // Only touch a label when its text changes; setting it always redraws.
 static void setTextIfChanged(lv_obj_t* label, const char* text) {
   if (strcmp(lv_label_get_text(label), text) != 0) lv_label_set_text(label, text);
@@ -60,6 +64,20 @@ static const char* signalQuality(int rssi) {
     case 2:  return "weak";
     default: return "very weak";
   }
+}
+
+// The update status in words, on the line under the version.
+static const char* otaDescription(const OtaStatus& status) {
+  switch (status.state) {
+    case OtaState::Idle:        return "Not checked yet";
+    case OtaState::Checking:    return "Checking for updates...";
+    case OtaState::UpToDate:    return "Up to date";
+    case OtaState::Available:   return "An update is ready to install";
+    case OtaState::Downloading: return "Installing...";
+    case OtaState::Installed:   return "Installed; restarting";
+    case OtaState::Failed:      return status.message;
+  }
+  return "?";
 }
 
 static const char* linkDescription(ClimateLink link) {
@@ -163,9 +181,38 @@ void SettingsScreen::open(const Callbacks& callbacks, void* context, uint8_t bri
       },
       LV_EVENT_CLICKED, this);
 
+  makeCaption(content, "Firmware");
+  otaLabel_ = makeInfoLabel(content);
+  otaButton_ = makeActionButton(content, "Check for updates");
+  lv_obj_add_event_cb(
+      otaButton_,
+      [](lv_event_t* e) {
+        // One button, two jobs: it offers the install once there's something
+        // to install, and asks again otherwise.
+        auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+        if (screen->ota_.state == OtaState::Available) {
+          if (screen->callbacks_.installUpdate) screen->callbacks_.installUpdate(screen->context_);
+        } else if (screen->callbacks_.checkForUpdate) {
+          screen->callbacks_.checkForUpdate(screen->context_);
+        }
+      },
+      LV_EVENT_CLICKED, this);
+
+  channelLabel_ = buttonLabel(makeActionButton(content, "Channel: Stable"));
+  lv_obj_add_event_cb(
+      lv_obj_get_parent(channelLabel_),
+      [](lv_event_t* e) {
+        auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+        if (screen->callbacks_.openChannelList) {
+          screen->callbacks_.openChannelList(screen->context_);
+        }
+      },
+      LV_EVENT_CLICKED, this);
+
   renderWifi();
   renderMqtt();
   renderClimate();
+  renderOta();
 }
 
 void SettingsScreen::showWifiStatus(const WifiStatus& status) {
@@ -186,6 +233,12 @@ void SettingsScreen::showClimate(ClimateLink link, const char* unitName) {
   renderClimate();
 }
 
+void SettingsScreen::showOta(const OtaStatus& status, OtaChannel channel) {
+  ota_ = status;
+  otaChannel_ = channel;
+  renderOta();
+}
+
 void SettingsScreen::renderWifi() {
   if (!overlay_) return;
 
@@ -200,8 +253,10 @@ void SettingsScreen::renderWifi() {
   }
   setTextIfChanged(wifiLabel_, text);
 
-  // Changing the broker means testing it, which needs the network up.
+  // Changing the broker means testing it, which needs the network up. So does
+  // reaching GitHub, so the firmware section follows the same rule.
   setEnabled(mqttButton_, wifiStatus_.connected);
+  renderOta();
 }
 
 void SettingsScreen::renderMqtt() {
@@ -222,10 +277,52 @@ void SettingsScreen::renderClimate() {
   setTextIfChanged(climateLabel_, text);
 }
 
+void SettingsScreen::renderOta() {
+  if (!overlay_) return;
+
+  // What's running, then what's on offer. The version line names the channel,
+  // because the same version number means different things on each.
+  char text[64 + sizeof(OtaStatus::message)];
+  if (ota_.state == OtaState::Downloading && ota_.progress >= 0) {
+    snprintf(text, sizeof(text), "%s (%s)\nInstalling... %d%%", FIRMWARE_VERSION,
+             channelName(otaChannel_), ota_.progress);
+  } else if (ota_.state == OtaState::Available) {
+    snprintf(text, sizeof(text), "%s (%s)\nUpdate available: %s", FIRMWARE_VERSION,
+             channelName(otaChannel_), ota_.version);
+  } else {
+    snprintf(text, sizeof(text), "%s (%s)\n%s", FIRMWARE_VERSION, channelName(otaChannel_),
+             otaDescription(ota_));
+  }
+  setTextIfChanged(otaLabel_, text);
+
+  char action[48];
+  if (ota_.state == OtaState::Available) {
+    snprintf(action, sizeof(action), "Install %s", ota_.version);
+  } else {
+    snprintf(action, sizeof(action), "Check for updates");
+  }
+  setTextIfChanged(buttonLabel(otaButton_), action);
+
+  // Nothing to press while a check or a download is running, or once the panel
+  // is on its way into the new firmware.
+  const bool working = ota_.state == OtaState::Checking || ota_.state == OtaState::Downloading ||
+                       ota_.state == OtaState::Installed;
+  setEnabled(otaButton_, wifiStatus_.connected && !working);
+  setEnabled(lv_obj_get_parent(channelLabel_), !working);
+
+  char channel[32];
+  snprintf(channel, sizeof(channel), "Channel: %s",
+           otaChannel_ == OtaChannel::Beta ? "Beta" : "Stable");
+  setTextIfChanged(channelLabel_, channel);
+}
+
 void SettingsScreen::close() {
   hideOverlay();
   wifiLabel_ = nullptr;
   mqttLabel_ = nullptr;
   mqttButton_ = nullptr;
   climateLabel_ = nullptr;
+  otaLabel_ = nullptr;
+  otaButton_ = nullptr;
+  channelLabel_ = nullptr;
 }

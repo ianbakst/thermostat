@@ -80,6 +80,139 @@ restarts the panel, because the tests have by then taken over the radio and
 the broker connection. `pio run -t erase` wipes the saved settings and sends
 the panel back to step 1.
 
+## Updates
+
+A panel in a wall is awkward to reach, so it updates itself. New firmware is
+published as a GitHub release of this repo, and the panel installs it over
+Wi-Fi; the USB cable is only needed for the first flash.
+
+### On the panel
+
+**Settings → Firmware** shows the version running and which channel it's on,
+what the last check found, and a button that does whichever of the two things
+makes sense:
+
+```
+Firmware
+1.4.2 (stable)
+Update available: 1.5.0
+[ Install 1.5.0 ]
+[ Channel: Stable ]
+```
+
+The panel checks by itself a minute after the network comes up and once a day
+after that, and **Check for updates** asks straight away. A check fetches one
+small JSON file — the version available and where to get it — so it costs
+almost nothing to do daily.
+
+Tapping **Install** downloads the firmware into whichever of the two app slots
+isn't running, showing the percentage as it goes, and restarts into it. The
+screen stays awake for the download, and the panel keeps working throughout:
+the download runs in a task of its own, so the UI stays responsive and the
+mini-split stays controllable until the restart.
+
+**A new firmware is on trial for its first minute.** The bootloader keeps the
+one it replaced until the new one has run for `OTA_SELF_TEST_MS` with the
+network up; only then does the panel say to keep it. One that crashes on the
+way up, or that can't join Wi-Fi, is replaced by its predecessor on the next
+boot. That's the safety net that makes updating a device you can't easily
+reach a reasonable thing to do.
+
+**Two channels**, under **Channel**:
+
+- **Stable** — the tagged releases. What a panel should normally be on.
+- **Beta** — rebuilt on every push to `dev`. Handy on a panel on the bench,
+  and something to switch back off afterwards.
+
+Switching channels checks the new one immediately, and installs whatever it
+offers — including an older version, if the channel you switched to is behind.
+Any version that isn't the one running counts as an update, which is what
+makes going back down a channel work.
+
+Nothing is checked or downloaded while setup mode is running: that has the
+radio busy testing the network and broker being typed in.
+
+Serial log: `Firmware: 1.4.2 (stable channel), running from app0`,
+`Update: 1.5.0 available (running 1.4.2)`, `Update: downloading ...`, and
+`Firmware: 1.5.0 passed its trial run and is now the one to keep`.
+
+### Releasing
+
+Two branches, each wired to a channel by
+[`.github/workflows/release.yml`](.github/workflows/release.yml):
+
+| Branch          | On a push                                       | Reaches           |
+| --------------- | ----------------------------------------------- | ----------------- |
+| `dev`           | rebuilds the rolling `beta` prerelease          | beta panels       |
+| `main`, tagged  | publishes the release `v1.5.0`                  | stable panels     |
+| anything else   | builds only, firmware kept as a run artifact    | nobody            |
+
+Work happens on branches off `dev`, which
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds on every push and
+pull request. Merging into `dev` puts a build in front of any panel on the beta
+channel. Shipping it is a tag:
+
+```bash
+git switch main && git merge --ff-only dev
+git tag v1.5.0 && git push origin main --tags
+```
+
+Each release carries three files:
+
+| File                   | What it's for                                            |
+| ---------------------- | -------------------------------------------------------- |
+| `manifest.json`        | version + download URL: all a panel fetches to check      |
+| `firmware.bin`         | the app image, what a panel installs over the air         |
+| `firmware.factory.bin` | bootloader + partitions + app, to flash a new panel at 0  |
+
+Panels look for the manifest at a URL that doesn't change with the version —
+`releases/latest/download/manifest.json` for stable, which is GitHub resolving
+"the newest release that isn't a prerelease", and `releases/download/beta/` for
+beta. Both URLs are in [`include/config.h`](include/config.h) and name this
+repo, so a fork changes them. The manifest found there names an exact tag to
+download from, so a release published between the check and the install can't
+swap the firmware underneath it.
+
+**Version numbers come from the tag** and nothing else edits them. The tag
+`v1.5.0` builds a firmware that calls itself `1.5.0`; a beta build is numbered
+from the last tag it's ahead of plus the run number, like `1.5.0-beta.41`.
+[`tools/firmware_version.py`](tools/firmware_version.py) compiles that string
+in as `FIRMWARE_VERSION`, and
+[`tools/make_manifest.py`](tools/make_manifest.py) writes the same string into
+the manifest, so the two can't drift apart. A local build instead describes
+itself from git (`1.5.0-3-gb209436-dirty`), which never matches a manifest —
+so a hand-built panel is never told it's out of date, and the settings page
+always says exactly what's on it.
+
+The `beta` release is deleted and recreated on each push so its tag follows
+`dev`. A panel checking during the few seconds that takes reports a failed
+check and tries again.
+
+### Trust
+
+The panel checks and downloads over HTTPS, verified against the certificate
+bundle built into the ESP-IDF, so there's no CA certificate here to expire.
+The image carries its own SHA-256, which `esp_ota` checks before the panel is
+allowed to boot from it, so a truncated or corrupted download is refused
+rather than installed. The manifest repeats that hash for checking a download
+by hand.
+
+This all assumes the repo is public: the panel sends no credentials, so a
+private repo's release assets would 404.
+
+### Flashing a new panel
+
+A panel that has never run this firmware needs one flash over USB — after
+that it can take care of itself. With PlatformIO, use **Upload** (below).
+Without it, `firmware.factory.bin` from any release is the whole flash image:
+
+```bash
+esptool --chip esp32c6 write-flash 0x0 firmware.factory.bin
+```
+
+(`esptool.py --chip esp32c6 write_flash 0x0 firmware.factory.bin` on esptool 4
+and earlier.)
+
 ## Working in VSCode
 
 Open this folder in VSCode with the PlatformIO extension and use the
@@ -126,13 +259,15 @@ src/
     mqtt_connection.h/.cpp connects to the MQTT broker (ESP-IDF client)
     provisioning.h/.cpp   setup mode: the panel's own network and 3-step setup
     setup_pages.h/.cpp    the HTML those steps serve (rendering only)
+    ota_updater.h/.cpp    checks for and installs firmware over the air
+    ota_status.h          update snapshot + channel the UI can display
   storage/
     settings_store.h/.cpp what the panel was told about your home, saved in flash
   ui/
     ui.h/.cpp             LVGL thermostat screen
     overlay_screen.h/.cpp base for the full-screen pages (lifecycle, header)
     picker.h/.cpp         full-screen option grid (mode, fan)
-    settings_screen.h/.cpp settings page: scrolling Wi-Fi, MQTT, mini-split, brightness
+    settings_screen.h/.cpp settings page: brightness, Wi-Fi, MQTT, mini-split, firmware
     setup_screen.h/.cpp   setup mode screen (QR code to join, step progress)
     list_screen.h/.cpp    scrollable list of labelled choices (units, louvres)
     airflow_screen.h/.cpp both louvres, behind the bottom-centre button
@@ -140,6 +275,11 @@ src/
     fonts/                GENERATED icon fonts, temperature font, fonts.h (see below)
 tools/
   generate_fonts.py       regenerates src/ui/fonts/
+  firmware_version.py     stamps the build with FIRMWARE_VERSION (PlatformIO pre-script)
+  make_manifest.py        writes the manifest.json a panel checks against
+.github/workflows/
+  ci.yml                  builds every branch and pull request
+  release.yml             publishes the stable and beta releases panels update from
 hardware/                 enclosure, mounting notes
 ```
 
@@ -271,7 +411,7 @@ Built one step at a time:
    - Serial log: `MQTT: connected`, `Mini-split: OfficeHVAC online`,
      `Mini-split: room 82°F, target 77°F, mode Off (off), fan Auto`, and each
      command sent. A wrong login logs `broker refused the connection`.
-5. **Setup on the device** ← *current*: no network name, password, broker
+5. **Setup on the device** ✓ No network name, password, broker
    login or unit name compiled into the firmware, so the same image runs on
    any panel and nothing private lives in git.
    - Setup mode runs an access point, a DNS server that answers every lookup
@@ -318,7 +458,36 @@ Built one step at a time:
      `Setup: network "Thermostat-39FEFF", password ..., page http://192.168.4.1/`,
      and on each boot the network, panel name, broker and MQTT username (never
      the passwords).
-6. **Polish**: OTA updates, enclosure, and maybe a local temperature sensor.
+6. **Polish** ← *current*: enclosure, and maybe a local temperature sensor.
+   - Updates over the air ✓ The panel installs its own firmware from this
+     repo's GitHub releases, so a panel in a wall never needs the USB cable
+     twice. See [Updates](#updates) for the whole of it.
+     - **Settings → Firmware** shows the version, the channel and what the
+       last check found, with one button that checks or installs depending
+       on which there is to do.
+     - Checks a minute after the network comes up
+       (`OTA_FIRST_CHECK_DELAY_MS`) and once a day after that
+       (`OTA_CHECK_INTERVAL_MS`), fetching only a few hundred bytes of JSON.
+     - The check and the download both run in a task of their own, so a slow
+       or unreachable GitHub never stalls the UI, the way MQTT already works.
+       `loop()` only reads the status they publish.
+     - Two channels, **Stable** (tagged releases) and **Beta** (every push to
+       `dev`), saved in flash like the rest of the settings. Any version
+       other than the one running counts as an update, so switching to a
+       channel that's behind offers the way back down too.
+     - TLS is verified against the certificate bundle in the ESP-IDF, so
+       there's no CA certificate in the repo to expire, and `esp_ota` checks
+       the image's own SHA-256 before the panel may boot from it.
+     - New firmware is on trial for `OTA_SELF_TEST_MS` with the network up
+       before the panel tells the bootloader to keep it. One that crashes or
+       can't join Wi-Fi is rolled back on the next boot. The Arduino core
+       would otherwise accept a new image the instant it booted, which is
+       what `verifyRollbackLater()` in `ota_updater.cpp` overrides.
+     - GitHub Actions builds every branch, publishes the rolling `beta`
+       prerelease from `dev` and a release from each `v*` tag. The version
+       is compiled in and written into the manifest from the same variable,
+       so a panel can't be offered a version the firmware doesn't call
+       itself.
    - Display sleep ✓ The backlight turns off after 15s without a touch
      (`DISPLAY_SLEEP_TIMEOUT_MS`). The tap that wakes it is swallowed until
      the finger lifts, so it can't press anything. Only the backlight goes

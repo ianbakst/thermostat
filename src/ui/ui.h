@@ -5,6 +5,7 @@
 
 #include "climate/climate.h"
 #include "config.h"
+#include "net/ota_status.h"
 #include "net/wifi_status.h"
 #include "ui/airflow_screen.h"
 #include "ui/list_screen.h"
@@ -48,6 +49,10 @@ class Ui {
     void (*cancelSetup)();           // the X on the setup screen
     void (*openUnitList)();          // "Change" under Mini-split: main calls showUnits()
     void (*setUnit)(const char* name);
+    void (*checkForUpdate)();        // "Check for updates" under Firmware
+    void (*installUpdate)();         // the same button, once there's one to install
+    void (*openChannelList)();       // "Channel": main calls showChannels()
+    void (*setOtaChannel)(OtaChannel channel);
     void (*setBrightness)(uint8_t value, bool save);  // the brightness slider
   };
 
@@ -62,6 +67,7 @@ class Ui {
   // Shown on the settings page.
   void showMqttStatus(const char* broker, bool connected, bool loginRefused);
   void showBrightness(uint8_t brightness);
+  void showOta(const OtaStatus& status, OtaChannel channel);
 
   // Setup mode: the QR code and what it says in words (see SetupScreen).
   void showSetup(const char* qrData, const char* line1, const char* line2, const char* hint,
@@ -70,6 +76,9 @@ class Ui {
 
   // The mini-splits to pick from (from MiniSplit).
   void showUnits(const char* const* names, int count, const char* selected);
+
+  // The two update channels, as a list like the one above.
+  void showChannels(OtaChannel current);
 
   // Covers everything while the panel restarts, so a black screen doesn't
   // look like a crash.
