@@ -88,17 +88,22 @@ Wi-Fi; the USB cable is only needed for the first flash.
 
 ### On the panel
 
-**Settings → Firmware** shows the version running and which channel it's on,
-what the last check found, and a button that does whichever of the two things
-makes sense:
+**Settings → Firmware** shows the version running, what the last check found,
+and a button that does whichever of the two things makes sense:
 
 ```
 Firmware
-1.4.2 (stable)
+1.4.2
 Update available: 1.5.0
 [ Install 1.5.0 ]
 [ Channel: Stable ]
 ```
+
+The version line says only what's running. The channel is a setting with its
+own button, not a property of that build — a panel can be running a beta while
+subscribed to stable, and saying `1.4.2 (stable)` would make that read as a
+claim about where the firmware came from. The version string carries its own
+provenance: a `-beta.N` suffix says it plainly.
 
 The panel checks by itself a minute after the network comes up and once a day
 after that, and **Check for updates** asks straight away. A check fetches one
@@ -462,9 +467,9 @@ Built one step at a time:
    - Updates over the air ✓ The panel installs its own firmware from this
      repo's GitHub releases, so a panel in a wall never needs the USB cable
      twice. See [Updates](#updates) for the whole of it.
-     - **Settings → Firmware** shows the version, the channel and what the
-       last check found, with one button that checks or installs depending
-       on which there is to do.
+     - **Settings → Firmware** shows the version and what the last check
+       found, with one button that checks or installs depending on which
+       there is to do, and the channel on a button of its own.
      - Checks a minute after the network comes up
        (`OTA_FIRST_CHECK_DELAY_MS`) and once a day after that
        (`OTA_CHECK_INTERVAL_MS`), fetching only a few hundred bytes of JSON.

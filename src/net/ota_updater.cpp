@@ -280,13 +280,13 @@ bool OtaUpdater::tick(unsigned long nowMs, bool networkReady) {
   if (networkReady && !running_.load()) {
     const unsigned long due = checkedOnce_ ? OTA_CHECK_INTERVAL_MS : OTA_FIRST_CHECK_DELAY_MS;
     if (nowMs - lastCheckMs_ >= due) {
-      // check() moves the schedule on, so this only has to decide whether to
-      // ask at all: an offer already made shouldn't be re-made every day.
-      if (status().state != OtaState::Available) {
-        check(nowMs);
-      } else {
-        lastCheckMs_ = nowMs;
-      }
+      // This runs even when an offer is already pending, so that a stale one
+      // is replaced when a newer release appears. It costs nothing to re-offer
+      // the same version: publish() writes an identical status, tick() sees no
+      // change and nothing is redrawn. Skipping the check here instead left a
+      // panel showing the first release it ever saw, with no way to refresh it
+      // short of changing channel and back.
+      check(nowMs);
     }
   }
 

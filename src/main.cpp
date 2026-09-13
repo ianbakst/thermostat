@@ -197,6 +197,11 @@ void setup() {
             startBrokerSetup, cancelSetup, openUnitList, setUnit, checkForUpdate, installUpdate,
             openChannelList, setOtaChannel, setBrightness});
   ui.showBrightness(settings.brightness);
+  // Both of these hand the saved settings to the screens that show them.
+  // Without this the firmware section would sit on its own defaults until the
+  // first update check changed something, and claim to be on a channel the
+  // panel isn't on.
+  ui.showOta(ota.status(), settings.otaChannel);
   ui.show(miniSplit.state());
 
   // Registers the MQTT topics, including the one that lists the units to pick

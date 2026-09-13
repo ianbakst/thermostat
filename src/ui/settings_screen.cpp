@@ -280,18 +280,19 @@ void SettingsScreen::renderClimate() {
 void SettingsScreen::renderOta() {
   if (!overlay_) return;
 
-  // What's running, then what's on offer. The version line names the channel,
-  // because the same version number means different things on each.
+  // What's running, then what's on offer. The channel is deliberately not on
+  // this line: it's a setting (with its own button below), not a property of
+  // the firmware running, and the two can legitimately differ — installing a
+  // beta and then switching to stable would otherwise render as though that
+  // beta were a stable release. The version string already says where a build
+  // came from.
   char text[64 + sizeof(OtaStatus::message)];
   if (ota_.state == OtaState::Downloading && ota_.progress >= 0) {
-    snprintf(text, sizeof(text), "%s (%s)\nInstalling... %d%%", FIRMWARE_VERSION,
-             channelName(otaChannel_), ota_.progress);
+    snprintf(text, sizeof(text), "%s\nInstalling... %d%%", FIRMWARE_VERSION, ota_.progress);
   } else if (ota_.state == OtaState::Available) {
-    snprintf(text, sizeof(text), "%s (%s)\nUpdate available: %s", FIRMWARE_VERSION,
-             channelName(otaChannel_), ota_.version);
+    snprintf(text, sizeof(text), "%s\nUpdate available: %s", FIRMWARE_VERSION, ota_.version);
   } else {
-    snprintf(text, sizeof(text), "%s (%s)\n%s", FIRMWARE_VERSION, channelName(otaChannel_),
-             otaDescription(ota_));
+    snprintf(text, sizeof(text), "%s\n%s", FIRMWARE_VERSION, otaDescription(ota_));
   }
   setTextIfChanged(otaLabel_, text);
 

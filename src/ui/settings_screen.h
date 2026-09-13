@@ -33,7 +33,7 @@
 //   [ Change ]              pick from the units Home Assistant advertises
 //
 //   Firmware
-//   1.4.2 (stable)
+//   1.4.2
 //   Up to date
 //   [ Check for updates ]   becomes [ Install 1.5.0 ] once there's one to
 //                           install; needs Wi-Fi, so it's greyed out without it
