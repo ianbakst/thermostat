@@ -1,19 +1,41 @@
-# PlatformIO
+# PlatformIO (one build directory per firmware: panel/.pio, unit/.pio)
 .pio/
 .pioenvs/
 .piolibdeps/
 
-# VSCode (PlatformIO regenerates these)
+# VSCode (PlatformIO regenerates these, in each project folder)
 .vscode/.browse.c_cpp.db*
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch/
+*/.vscode/
 
-# Written by tools/make_manifest.py; the real one is a release asset
+# Written by tools/make_manifest.py; the real ones are release assets
 manifest.json
+*-manifest.json
+release/
+
+# KiCad: backups, per-user project settings, caches and lock files. The
+# schematic, board and *.kicad_pro are the project and are tracked.
+*-backups/
+*.kicad_prl
+fp-info-cache
+*.lck
+*.kicad_sch-bak
+*.kicad_pcb-bak
+_autosave-*
+
+# CAD scratch
+*.FCStd1
+*.stl.bak
+
+# Editor local history (the VSCode extension keeps a git repo of its own in
+# here, which has no business inside this one)
+.history/
 
 # OS
 .DS_Store
 
-# Wi-Fi password etc. (copy include/secrets.example.h to create it)
-include/secrets.h
+# Nothing private is compiled in any more (it's entered during setup and kept
+# in flash), but an old hand-written credentials header shouldn't be committed.
+secrets.h

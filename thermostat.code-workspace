@@ -1,0 +1,29 @@
+{
+    // The repo holds two PlatformIO projects. The extension works one project
+    // at a time, so open this workspace rather than the repo root: each folder
+    // below is a project the toolbar can build, upload and monitor, and the
+    // project switcher at the bottom of the window picks between them.
+    "folders": [
+        {
+            "name": "panel (ESP32-C6 wall panel)",
+            "path": "panel"
+        },
+        {
+            "name": "unit (ESP8266 mini-split controller)",
+            "path": "unit"
+        },
+        {
+            "name": "repo (docs, tools, CI)",
+            "path": "."
+        }
+    ],
+    "extensions": {
+        "recommendations": [
+            "platformio.platformio-ide"
+        ],
+        "unwantedRecommendations": [
+            "ms-vscode.cpptools-extension-pack",
+            "pioarduino.pioarduino-ide"
+        ]
+    }
+}

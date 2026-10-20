@@ -1,0 +1,13 @@
+{
+    "name": "thermostat_common",
+    "version": "0.1.0",
+    "description": "Code shared by this repo's two firmwares: the wall panel and the mini-split's own controller. Both run the same Arduino core on an ESP32, so the network plumbing and the MQTT protocol they speak to each other can be written once.",
+    "frameworks": "arduino",
+    "platforms": "espressif32",
+    "build": {
+        "flags": [
+            "-Wall",
+            "-Wextra"
+        ]
+    }
+}

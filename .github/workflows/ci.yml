@@ -1,10 +1,10 @@
-# Builds every branch and pull request, so a change that doesn't compile is
-# caught before it can reach a panel.
+# Builds both firmwares on every branch and pull request, so a change that
+# doesn't compile is caught before it can reach a panel or a mini-split.
 #
 # `dev` and tags are left out on purpose: release.yml builds those, and
-# building them twice would only cost time. Each run leaves firmware.bin
-# behind as an artifact, which is the easy way to flash a work-in-progress
-# branch over USB without a local toolchain.
+# building them twice would only cost time. Each run leaves the images behind
+# as artifacts, which is the easy way to flash a work-in-progress branch over
+# USB without a local toolchain.
 name: CI
 
 on:
@@ -18,6 +18,22 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    # The two firmwares are separate PlatformIO projects for different chips,
+    # so they build independently and a break in one still reports the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: panel
+            dir: panel
+            build_dir: panel/.pio/build/esp32c6-touch-lcd
+          - name: unit
+            dir: unit
+            build_dir: unit/.pio/build/xiao-esp32c3
+
+    name: build ${{ matrix.name }}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,24 +43,27 @@ jobs:
         with:
           python-version: "3.12"
 
-      # The toolchain and the pinned pioarduino platform are ~1GB and don't
-      # change between runs; the key is the config that pins them.
+      # The toolchains are ~1GB and don't change between runs; the key is the
+      # config that pins them, and each firmware caches its own.
       - uses: actions/cache@v4
         with:
           path: |
             ~/.platformio/.cache
             ~/.platformio/packages
             ~/.platformio/platforms
-          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          key: pio-${{ runner.os }}-${{ matrix.name }}-${{ hashFiles(format('{0}/platformio.ini', matrix.dir)) }}
 
       - run: pip install --upgrade platformio
 
       - name: Build
-        run: pio run
+        run: pio run -d ${{ matrix.dir }}
 
+      # firmware.bin is what a device installs over the air;
+      # firmware.factory.bin is the whole-flash image for a first USB flash.
       - uses: actions/upload-artifact@v4
         with:
-          name: firmware-${{ github.sha }}
+          name: ${{ matrix.name }}-firmware-${{ github.sha }}
           path: |
-            .pio/build/esp32c6-touch-lcd/firmware.bin
-            .pio/build/esp32c6-touch-lcd/firmware.factory.bin
+            ${{ matrix.build_dir }}/firmware.bin
+            ${{ matrix.build_dir }}/firmware.factory.bin
+          if-no-files-found: error

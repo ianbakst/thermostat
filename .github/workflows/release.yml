@@ -1,4 +1,5 @@
-# Publishes the firmware panels update themselves from.
+# Publishes the firmware panels update themselves from, and the mini-split
+# controller image to upload by hand.
 #
 # Two channels, each tied to a place in the repo:
 #
@@ -10,13 +11,24 @@
 #            channel always finds the newest dev build there. Prereleases
 #            don't count as "latest", so this never reaches a stable panel.
 #
-# Every release carries three files:
+# Both firmwares are built from the same commit and carry the same version,
+# so a release is one set of images that belong together. Every asset says
+# which device it is for, because a panel must never be handed the
+# mini-split's image:
 #
-#   manifest.json         version + download URL; the only thing a panel
-#                         fetches when it checks (see tools/make_manifest.py)
-#   firmware.bin          the app image, what a panel installs over the air
-#   firmware.factory.bin  bootloader + partition table + app, for flashing a
-#                         new panel over USB at offset 0
+#   panel-manifest.json         version + download URL; the only thing a panel
+#                               fetches when it checks (tools/make_manifest.py)
+#   panel-firmware.bin          the app image, what a panel installs over the air
+#   panel-firmware.factory.bin  bootloader + partition table + app, for flashing
+#                               a new panel over USB at offset 0
+#   unit-firmware.bin           the mini-split controller's app image
+#   unit-firmware.factory.bin   its whole-flash image, for flashing a new
+#                               controller board over USB at offset 0
+#
+# The three unprefixed names are the same panel files under the names the
+# panel firmware used before this repo held two devices. Panels in the field
+# still look for those, so they stay until every panel has installed a build
+# that reads panel-manifest.json, and can then be dropped.
 name: Release
 
 on:
@@ -33,7 +45,8 @@ jobs:
       contents: write # creates releases and moves the beta tag
     env:
       GH_TOKEN: ${{ github.token }}
-      BUILD_DIR: .pio/build/esp32c6-touch-lcd
+      PANEL_BUILD_DIR: panel/.pio/build/esp32c6-touch-lcd
+      UNIT_BUILD_DIR: unit/.pio/build/xiao-esp32c3
 
     steps:
       - uses: actions/checkout@v4
@@ -78,28 +91,50 @@ jobs:
             ~/.platformio/.cache
             ~/.platformio/packages
             ~/.platformio/platforms
-          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          key: pio-${{ runner.os }}-release-${{ hashFiles('panel/platformio.ini', 'unit/platformio.ini') }}
 
       - run: pip install --upgrade platformio
 
-      # tools/firmware_version.py reads this and compiles it in as
-      # FIRMWARE_VERSION, which is the version the panel compares against the
-      # manifest below. The two come from the same variable, so they can't
-      # disagree.
-      - name: Build
+      # tools/firmware_version.py reads FIRMWARE_VERSION and compiles it in,
+      # which is the version the panel compares against the manifest below.
+      # Both firmwares are stamped from the same variable, so a release's
+      # images can't disagree about which build they are.
+      - name: Build the panel firmware
         env:
           FIRMWARE_VERSION: ${{ steps.version.outputs.version }}
-        run: pio run
+        run: pio run -d panel
 
-      - name: Write the manifest
+      - name: Build the mini-split controller firmware
+        env:
+          FIRMWARE_VERSION: ${{ steps.version.outputs.version }}
+        run: pio run -d unit
+
+      # Named assets, plus the unprefixed copies panels already in the field
+      # still ask for. Both manifests describe the same image under its two
+      # names, so whichever a panel reads, it downloads a file that exists.
+      - name: Collect the release assets
         run: |
-          python3 tools/make_manifest.py \
-            --version "${{ steps.version.outputs.version }}" \
-            --channel "${{ steps.version.outputs.channel }}" \
-            --tag "${{ steps.version.outputs.tag }}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --firmware "${BUILD_DIR}/firmware.bin" \
-            --out manifest.json
+          set -euo pipefail
+          mkdir -p release
+          cp "${PANEL_BUILD_DIR}/firmware.bin" release/panel-firmware.bin
+          cp "${PANEL_BUILD_DIR}/firmware.factory.bin" release/panel-firmware.factory.bin
+          cp "${UNIT_BUILD_DIR}/firmware.bin" release/unit-firmware.bin
+          cp "${UNIT_BUILD_DIR}/firmware.factory.bin" release/unit-firmware.factory.bin
+          cp "${PANEL_BUILD_DIR}/firmware.bin" release/firmware.bin
+          cp "${PANEL_BUILD_DIR}/firmware.factory.bin" release/firmware.factory.bin
+
+          manifest() {
+            python3 tools/make_manifest.py \
+              --version "${{ steps.version.outputs.version }}" \
+              --channel "${{ steps.version.outputs.channel }}" \
+              --tag "${{ steps.version.outputs.tag }}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --firmware "${PANEL_BUILD_DIR}/firmware.bin" \
+              --asset "$1" \
+              --out "$2"
+          }
+          manifest panel-firmware.bin release/panel-manifest.json
+          manifest firmware.bin release/manifest.json  # legacy, see above
 
       # The beta release is replaced rather than added to, so its tag moves to
       # the commit just built and the old assets go with it. Panels checking
@@ -114,7 +149,7 @@ jobs:
             --target "${GITHUB_SHA}" \
             --title "Beta ${{ steps.version.outputs.version }}" \
             --notes "Built from dev at ${GITHUB_SHA}. Rebuilt on every push, so this tag always points at the newest dev build." \
-            manifest.json "${BUILD_DIR}/firmware.bin" "${BUILD_DIR}/firmware.factory.bin"
+            release/*
 
       # Tags are permanent, so a re-run updates the release in place instead of
       # replacing it.
@@ -124,11 +159,10 @@ jobs:
           set -euo pipefail
           tag="${{ steps.version.outputs.tag }}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" --clobber \
-              manifest.json "${BUILD_DIR}/firmware.bin" "${BUILD_DIR}/firmware.factory.bin"
+            gh release upload "$tag" --clobber release/*
           else
             gh release create "$tag" \
               --title "$tag" \
               --generate-notes \
-              manifest.json "${BUILD_DIR}/firmware.bin" "${BUILD_DIR}/firmware.factory.bin"
+              release/*
           fi
