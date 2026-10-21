@@ -93,7 +93,9 @@ Nothing about your home is compiled in, so a freshly flashed board starts in
    own address, so the page usually opens by itself.
 2. **Fill it in:** your Wi-Fi, a name for this unit, the MQTT broker and its
    login, how temperatures are reported (°F here, 50–90, step 1), and — when
-   replacing an existing board — the Home Assistant id below.
+   replacing an existing board — the Home Assistant id below. Then choose a
+   **settings password**, at least 8 characters. It guards
+   [the unit's settings](#its-pages-on-your-network), not its controls.
 3. **Save.** It restarts, joins your network, connects to the broker, and
    turns up in Home Assistant by itself. The serial log says whether each
    step worked, including when a broker refuses the login, and
@@ -130,6 +132,29 @@ Its IP address works too; the serial log prints it.
   installed unit can be checked on and reconfigured without opening it up.
   Saving restarts it with the new settings. Reload it for the latest status.
 
+**The controls are open to anyone on your network; the settings need the
+password** chosen in setup mode. A visitor can turn the heat up, but can't
+see or change the Wi-Fi, the broker login or anything else.
+
+- **Log in once per browser.** It stays logged in for 30 days after its last
+  visit to the settings, and through restarts and updates. **Log out** is at
+  the bottom of the settings. Each unit has its own login, so a new phone logs
+  in to each one once. Using the same password on all of them is fine.
+- **Changing it** takes the current one, so a phone left logged in can't be
+  used to change it. Changing it logs out every other browser, which also
+  makes it the way to log out a lost phone.
+- **Forgotten it?** [Setup mode](#back-to-setup-mode) sets a new one without
+  asking for the old, since getting there means opening the unit.
+- **After 5 wrong passwords in a row**, logins are refused for 30 seconds.
+- **A unit set up before there was a password has none**, so its settings
+  stay shut and the page says to hold BOOT and choose one.
+- **What the unit keeps is a salted hash**, never the password itself. The
+  pages are plain HTTP, though, so the password crosses your Wi-Fi
+  unencrypted when you log in, and so does the login your browser keeps.
+  The unit has no clock, so it can't expire that login itself: the browser
+  drops it after 30 days, and a copy of it would keep working until the
+  password changes.
+
 Some things to know:
 
 - **The unit only takes setpoints from 16 to 31°C (61–88°F).** A setpoint
@@ -141,13 +166,11 @@ Some things to know:
   and an empty one keeps the saved password, but only for the same network,
   or the same broker and username. Change either of those and the password
   has to be typed again, so a saved one is never sent somewhere new.
-- **There's no login yet.** Anyone on your network can use the controls and
-  change the settings, as with the firmware these units ran before. Both only
+- **Other websites can't use it.** The controls, logging in and saving only
   work from the controller's own addresses (`<name>.local` or its IP), so
-  another website open in your browser can't use them. Opened at any other
+  another website open in your browser can't reach them. Opened at any other
   address, such as a name your router gave it, the page says where to go
-  instead. Firmware updates through the page will need a login before
-  they're added.
+  instead.
 - **It's for your home network.** Reaching it from outside means going in
   through something that already does that securely, such as a VPN or Home
   Assistant. Don't forward a port to it.
@@ -218,7 +241,9 @@ Where it differs from mitsubishi2mqtt, on purpose:
 ## Back to setup mode
 
 This is for a unit that can't get on the network to show its pages, because
-the Wi-Fi password changed or the page was given settings that don't work.
+the Wi-Fi password changed or the page was given settings that don't work,
+and for a forgotten settings password: leave the box empty to keep the one
+there is, or type a new one to replace it.
 
 **Hold the BOOT button for 5 seconds while the board is running.** It
 restarts into setup mode with the form filled in from what's saved (except
@@ -286,6 +311,7 @@ src/
     direct_api.h/.cpp     the WebSocket the controls (and later panels) drive it through
     protocol_json.h/.cpp  state and changes as the protocol's JSON, for both of the above
     own_address.h/.cpp    whether a browser request came from its own page
+    page_login.h/.cpp     the settings password, and the logins browsers keep
     settings_form.h/.cpp  the settings form setup mode and /settings both show
   storage/
     settings_store.h/.cpp what this unit was told about your home, saved in flash
@@ -386,5 +412,10 @@ header.
    `HeatPumpLink::apply()` the page uses.
 5. Updating itself over the air from its page, like the panel does, behind a
    login on that page.
+   - ~~The settings password~~ ✓. The controls stay open.
+   - Updates from this repo's GitHub releases, stable or beta, checked and
+     installed from `/settings`. Nothing can be uploaded to it.
 6. Panels connecting to the WebSocket API directly, so they work with no Home
-   Assistant and no broker at all.
+   Assistant and no broker at all. That replaces the panel's MQTT mode.
+7. Pairing panels to their unit, once a panel has a room sensor, so only a
+   paired panel's readings are used.

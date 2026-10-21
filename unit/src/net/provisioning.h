@@ -2,6 +2,7 @@
 #include <DNSServer.h>
 #include <WebServer.h>
 
+#include "net/page_login.h"
 #include "storage/settings_store.h"
 
 // Setup mode: the controller runs its own Wi-Fi network with one page on it,
@@ -18,7 +19,9 @@
 // BOOT button, which is inside the mini-split behind a screwed-on cover, so
 // whoever can start setup mode already has the unit open. A password would
 // only have to be read off the USB log, which an installed unit isn't plugged
-// into.
+// into. For the same reason, this is where the settings password is chosen,
+// and where a forgotten one is replaced without the old one (see
+// net/page_login.h).
 //
 // The panel does the same thing with a three-step wizard, testing each step
 // as it goes. This one is a single page: a controller has no screen to show
@@ -37,9 +40,9 @@ class Provisioning {
   static bool takeRequest();
 
   // Brings up the access point. `settings` fills the form in, so re-running
-  // setup doesn't mean retyping everything, and `store` is what the form
-  // writes to.
-  void begin(SettingsStore& store, const UnitSettings& settings);
+  // setup doesn't mean retyping everything, and `store` and `login` are what
+  // the form writes to.
+  void begin(SettingsStore& store, const UnitSettings& settings, PageLogin& login);
 
   // Call from loop(). Serves the page and answers DNS.
   void tick();
@@ -49,10 +52,12 @@ class Provisioning {
  private:
   void handleRoot();
   void handleSave();
+  void showForm(const String& error);
 
   WebServer server_{80};
   DNSServer dns_;
   SettingsStore* store_ = nullptr;
+  PageLogin* login_ = nullptr;
   UnitSettings draft_;
   bool active_ = false;
 };

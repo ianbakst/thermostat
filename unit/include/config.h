@@ -10,6 +10,7 @@
 // this unit's name are entered during setup and saved in flash.
 //
 
+#include <cstddef>
 #include <cstdint>
 
 // ---------------------------------------------------------------------------
@@ -88,6 +89,22 @@ constexpr unsigned long MQTT_STATE_INTERVAL_MS = 30'000;
 constexpr unsigned long DIRECT_API_PING_INTERVAL_MS = 15'000;
 constexpr unsigned long DIRECT_API_PONG_TIMEOUT_MS = 5'000;
 constexpr uint8_t DIRECT_API_MISSED_PONGS = 2;
+
+// ---------------------------------------------------------------------------
+// The password for the unit's settings (net/page_login.h)
+// ---------------------------------------------------------------------------
+// Chosen in setup mode. The controls stay open to anyone on the network; the
+// settings and firmware updates need this.
+constexpr size_t PAGE_PASSWORD_MIN_LENGTH = 8;
+// Rounds of PBKDF2 behind the saved hash, which is what makes guessing the
+// password from a copy of the flash slow. Every login check takes as long,
+// which the log reports each time a password is set.
+constexpr uint32_t PAGE_PASSWORD_ROUNDS = 10'000;
+// Wrong passwords in a row before logins are refused for a while.
+constexpr int PAGE_LOGIN_MAX_FAILURES = 5;
+constexpr unsigned long PAGE_LOGIN_LOCKOUT_MS = 30'000;
+// How long a browser stays logged in after its last visit to the settings.
+constexpr unsigned long PAGE_LOGIN_DAYS = 30;
 
 // ---------------------------------------------------------------------------
 // What this unit tells Home Assistant and the panels about itself

@@ -2,6 +2,8 @@
 
 #include <cstring>
 
+#include "config.h"
+
 namespace settings_form {
 
 String escapeHtml(const char* text) {
@@ -33,7 +35,8 @@ String pageStart(const char* title, const char* style) {
          "border:1px solid #444;background:#222;color:#eee}"
          "button{margin-top:22px;width:100%;padding:14px;font-size:16px;border:0;border-radius:6px;"
          "background:#1976d2;color:#fff}"
-         ".hint,.sub{color:#999;font-size:13px;line-height:1.4;margin:4px 0 0}";
+         ".hint,.sub{color:#999;font-size:13px;line-height:1.4;margin:4px 0 0}"
+         ".error{color:#ffab91;margin:16px 0 0}";
   out += style;
   out += "</style></head><body><h1>";
   out += escapeHtml(title);
@@ -64,8 +67,15 @@ static String field(const char* label, const char* name, const char* value, cons
   return out;
 }
 
-String form(const UnitSettings& settings) {
-  String out = "<form method=POST action=/save>";
+String form(const UnitSettings& settings, const PageLogin& login, PasswordBoxes boxes,
+            const String& error) {
+  String out;
+  if (!error.isEmpty()) {
+    out += "<p class=error>";
+    out += escapeHtml(error.c_str());
+    out += " Nothing was saved, and any passwords need typing again.</p>";
+  }
+  out += "<form method=POST action=/save>";
   out += field("Wi-Fi network", "ssid", settings.wifiSsid, nullptr);
   out += field("Wi-Fi password", "wpw", "",
                settings.wifiPassword[0] ? "Leave empty to keep the saved one. A different "
@@ -92,6 +102,26 @@ String form(const UnitSettings& settings) {
   out += field("Home Assistant id", "haid", settings.haUniqueId,
                "Leave blank for a new unit. When replacing a board, put the old one's unique_id "
                "here and Home Assistant keeps the entity it already has.");
+
+  const String minimum = String("At least ") + PAGE_PASSWORD_MIN_LENGTH + " characters.";
+  if (boxes == PasswordBoxes::Setup) {
+    const String hint =
+        login.hasPassword()
+            ? "Leave empty to keep the saved one. Typing one replaces it, even if the old one "
+              "is forgotten."
+            : "Guards this unit's settings and firmware updates. The controls stay open to "
+              "anyone on your network. " + minimum;
+    out += field("Settings password", "ppw", "", hint.c_str(), "password");
+    out += field("Settings password again", "ppw2", "", nullptr, "password");
+  } else {
+    out += field("New settings password", "ppw", "",
+                 "Leave empty to keep the current one. Changing it logs out every other "
+                 "browser.",
+                 "password");
+    out += field("New settings password again", "ppw2", "", nullptr, "password");
+    out += field("Current settings password", "cpw", "", "Only needed to change it.", "password");
+  }
+
   out += "<button type=submit>Save and restart</button></form>";
   return out;
 }
@@ -135,6 +165,31 @@ void read(WebServer& server, UnitSettings& settings) {
   readPassword(server, "mpw", settings.mqttPassword, sizeof(settings.mqttPassword),
                strcmp(before.mqttHost, settings.mqttHost) == 0 &&
                    strcmp(before.mqttUser, settings.mqttUser) == 0);
+}
+
+String readPagePassword(WebServer& server, PageLogin& login, PasswordBoxes boxes,
+                        unsigned long nowMs, String& password) {
+  password = server.arg("ppw");
+  if (password.isEmpty()) {
+    return login.hasPassword() ? "" : "Choose a settings password: the settings can't be opened "
+                                      "without one.";
+  }
+  if (password.length() < PAGE_PASSWORD_MIN_LENGTH) {
+    return String("The settings password needs at least ") + PAGE_PASSWORD_MIN_LENGTH +
+           " characters.";
+  }
+  if (password != server.arg("ppw2")) return "The two new settings passwords don't match.";
+
+  if (boxes == PasswordBoxes::Change) {
+    switch (login.check(server.arg("cpw").c_str(), nowMs)) {
+      case PageLogin::Check::Right: break;
+      case PageLogin::Check::Wrong: return "The current settings password isn't right.";
+      case PageLogin::Check::LockedOut:
+        return String("Too many wrong passwords. Wait ") + PAGE_LOGIN_LOCKOUT_MS / 1'000 +
+               " seconds and try again.";
+    }
+  }
+  return "";
 }
 
 String saved(const String& message) {

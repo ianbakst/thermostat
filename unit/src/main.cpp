@@ -17,6 +17,7 @@
 #include "net/direct_api.h"
 #include "net/mqtt_api.h"
 #include "net/mqtt_connection.h"
+#include "net/page_login.h"
 #include "net/provisioning.h"
 #include "net/web_pages.h"
 #include "net/wifi_connection.h"
@@ -25,6 +26,7 @@
 static HeatPumpLink heatPump;
 static SettingsStore store;
 static UnitSettings settings;
+static PageLogin pageLogin;
 static Provisioning provisioning;
 static SetupButton setupButton;
 static WifiConnection wifi;
@@ -49,6 +51,7 @@ void setup() {
 
   store.begin();
   settings = store.load();
+  pageLogin.begin();
 
   // Taken whether it's needed or not, so it only ever applies to the boot
   // right after the button was held.
@@ -62,7 +65,7 @@ void setup() {
     // the link starts then.
     Serial.println(setupRequested ? "Setup: asked for with the BOOT button, starting setup mode"
                                   : "Setup: no network saved, starting setup mode");
-    provisioning.begin(store, settings);
+    provisioning.begin(store, settings, pageLogin);
   } else {
     heatPump.begin();
     setupButton.begin();
@@ -106,7 +109,7 @@ void loop() {
         .bufferSize = MQTT_BUFFER_SIZE,
     };
     mqttApi.begin(mqtt, heatPump, settings, options);
-    webPages.begin(store, settings, heatPump, wifi, mqtt);
+    webPages.begin(store, settings, heatPump, wifi, mqtt, pageLogin);
     directApi.begin(heatPump, settings);
   }
 

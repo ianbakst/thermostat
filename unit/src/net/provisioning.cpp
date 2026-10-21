@@ -22,8 +22,9 @@ bool Provisioning::takeRequest() {
   return requested;
 }
 
-void Provisioning::begin(SettingsStore& store, const UnitSettings& settings) {
+void Provisioning::begin(SettingsStore& store, const UnitSettings& settings, PageLogin& login) {
   store_ = &store;
+  login_ = &login;
   draft_ = settings;
   active_ = true;
 
@@ -55,16 +56,28 @@ void Provisioning::tick() {
   server_.handleClient();
 }
 
-void Provisioning::handleRoot() {
+void Provisioning::handleRoot() { showForm(""); }
+
+void Provisioning::showForm(const String& error) {
   String page = settings_form::pageStart("Mini-split setup");
-  page += settings_form::form(draft_);
+  page += settings_form::form(draft_, *login_, settings_form::PasswordBoxes::Setup, error);
   page += settings_form::PAGE_END;
   server_.send(200, "text/html", page);
 }
 
 void Provisioning::handleSave() {
   settings_form::read(server_, draft_);
+
+  String password;
+  const String error = settings_form::readPagePassword(
+      server_, *login_, settings_form::PasswordBoxes::Setup, millis(), password);
+  if (!error.isEmpty()) {
+    showForm(error);  // what was typed stays in draft_, apart from passwords
+    return;
+  }
+
   store_->save(draft_);
+  if (!password.isEmpty()) login_->setPassword(password.c_str());
 
   server_.send(200, "text/html",
                settings_form::saved("Restarting and joining your network. This page is about to "
