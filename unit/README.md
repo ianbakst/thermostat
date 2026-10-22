@@ -70,6 +70,9 @@ From the repo root:
 In VSCode, open [`thermostat.code-workspace`](../thermostat.code-workspace)
 and pick **unit** in the project switcher at the bottom of the window.
 
+USB is only needed once per board. After that it
+[updates itself](#firmware-updates) from this repo's releases.
+
 What a connected unit logs, once a second when something changes:
 
 ```
@@ -181,6 +184,46 @@ The controls talk to the unit over a WebSocket on port 81, in JSON. That's
 the same API the panels will use where there's no broker. The format is
 written down in
 [`mini_split_protocol.h`](../shared/thermostat_common/src/protocol/mini_split_protocol.h).
+
+## Firmware updates
+
+A unit inside a mini-split is awkward to reach, so it updates itself from
+this repo's GitHub releases, the same way the panel does. It's all on
+`/settings`, under **Firmware**: the version running, the channel, and what
+the last check found, with **Check now**, **Install**, and a button to switch
+channel.
+
+- **Two channels:** *stable* is the tagged releases off `main`; *beta* is a
+  build of every push to `dev`, for trying things out. A unit starts on
+  stable.
+- **It checks by itself** a minute after joining the network, then once a
+  day. **It never installs by itself**: nothing changes until someone
+  presses Install.
+- **Only releases can be installed.** It downloads what its channel's
+  `unit-manifest.json` points at, over TLS, and the image's own checksum is
+  verified before it's used. There's no way to upload firmware to it.
+- **The heat pump keeps running during the download.** At the end the unit
+  restarts into the new firmware, which takes a few seconds; Home Assistant
+  shows it unavailable meanwhile.
+- **New firmware is on trial for its first minute.** If it can't join Wi-Fi,
+  or the unit restarts before then, it goes back to the firmware it replaced,
+  so a bad update can't strand a unit in the wall. Leave it alone for that
+  minute: saving settings then would roll it back.
+- **A board flashed by hand is always offered the release.** Any version
+  other than the one running counts, and a USB build's version, such as
+  `1.5.0-3-gfe059de-dirty`, never matches a release's.
+
+What it logs:
+
+```
+Firmware: 1.5.0 (stable channel), running from app0
+Update: checking https://github.com/ianbakst/thermostat/releases/latest/download/unit-manifest.json
+Update: 1.5.1 available (running 1.5.0)
+Update: downloading https://github.com/ianbakst/thermostat/releases/download/v1.5.1/unit-firmware.bin
+Update: 1.5.1 installed, restarting into it
+Firmware: just updated, on trial for 60s
+Firmware: 1.5.1 passed its trial run and is now the one to keep
+```
 
 ## Home Assistant and MQTT
 
@@ -321,7 +364,7 @@ The case and the CN105 adapter board are in
 [`../hardware/unit`](../hardware/unit).
 
 Shared with the panel, one level up: [`../shared/thermostat_common`](../shared)
-(Wi-Fi, the MQTT client, and the protocol both firmwares speak), `../tools`
+(Wi-Fi, the MQTT client, the updater, and the protocol both firmwares speak), `../tools`
 (the version stamp and manifest writer) and `../.github/workflows`.
 
 ## How it fits together
@@ -410,11 +453,11 @@ header.
    will, periodic `state`, and the Home Assistant discovery config.
 4. ~~Accepting commands on the `/set` topics~~ ✓, through the same
    `HeatPumpLink::apply()` the page uses.
-5. Updating itself over the air from its page, like the panel does, behind a
-   login on that page.
+5. ~~Updating itself over the air from its page~~ ✓, behind a login on that
+   page.
    - ~~The settings password~~ ✓. The controls stay open.
-   - Updates from this repo's GitHub releases, stable or beta, checked and
-     installed from `/settings`. Nothing can be uploaded to it.
+   - ~~Updates from this repo's GitHub releases~~ ✓, stable or beta, checked
+     and installed from `/settings`. Nothing can be uploaded to it.
 6. Panels connecting to the WebSocket API directly, so they work with no Home
    Assistant and no broker at all. That replaces the panel's MQTT mode.
 7. Pairing panels to their unit, once a panel has a room sensor, so only a

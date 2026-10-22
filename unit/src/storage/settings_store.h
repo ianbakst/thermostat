@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "config.h"
+#include "net/ota_status.h"
 
 // Everything this controller is told about its installation, all of it
 // entered on the setup page (see src/net/provisioning.h). None of it is
@@ -63,6 +64,12 @@ class SettingsStore {
   UnitSettings load();
 
   void save(const UnitSettings& settings);
+
+  // Which releases it's offered, saved on its own: it's changed from the
+  // settings page without a restart, so it isn't in UnitSettings, where
+  // saving the form would put back whatever it was at boot.
+  OtaChannel loadOtaChannel();
+  void saveOtaChannel(OtaChannel channel);
 
  private:
   Preferences prefs_;

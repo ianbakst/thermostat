@@ -17,6 +17,7 @@
 #include "net/direct_api.h"
 #include "net/mqtt_api.h"
 #include "net/mqtt_connection.h"
+#include "net/ota_updater.h"
 #include "net/page_login.h"
 #include "net/provisioning.h"
 #include "net/web_pages.h"
@@ -34,6 +35,7 @@ static MqttConnection mqtt;
 static MqttApi mqttApi;
 static WebPages webPages;
 static DirectApi directApi;
+static OtaUpdater ota;
 
 static void logState(const HeatPumpState& state) {
   char text[192];
@@ -69,6 +71,14 @@ void setup() {
   } else {
     heatPump.begin();
     setupButton.begin();
+    ota.begin(store.loadOtaChannel(), {
+                                          .stableManifestUrl = OTA_STABLE_MANIFEST_URL,
+                                          .betaManifestUrl = OTA_BETA_MANIFEST_URL,
+                                          .firmwareVersion = FIRMWARE_VERSION,
+                                          .checkIntervalMs = OTA_CHECK_INTERVAL_MS,
+                                          .firstCheckDelayMs = OTA_FIRST_CHECK_DELAY_MS,
+                                          .selfTestMs = OTA_SELF_TEST_MS,
+                                      });
     Serial.printf("Unit \"%s\", reporting in %s\n", settings.name,
                   settings.useFahrenheit ? "°F" : "°C");
     wifi.begin(settings.wifiSsid, settings.wifiPassword, settings.name, WIFI_RETRY_INTERVAL_MS);
@@ -109,13 +119,21 @@ void loop() {
         .bufferSize = MQTT_BUFFER_SIZE,
     };
     mqttApi.begin(mqtt, heatPump, settings, options);
-    webPages.begin(store, settings, heatPump, wifi, mqtt, pageLogin);
+    webPages.begin(store, settings, heatPump, wifi, mqtt, pageLogin, ota);
     directApi.begin(heatPump, settings);
   }
 
   mqttApi.tick(now);
   webPages.tick();
   directApi.tick();
+
+  // The download runs in a task of its own; this only sees it finish. The
+  // new firmware takes over at the restart, on trial (see OtaUpdater).
+  if (ota.tick(now, wifi.connected()) && ota.status().state == OtaState::Installed) {
+    Serial.println("Update: restarting into the new firmware");
+    delay(500);  // let the log line out
+    ESP.restart();
+  }
 
   delay(10);
 }

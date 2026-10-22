@@ -9,12 +9,13 @@
 
 #include <cstring>
 
-#include "config.h"
+// A manifest is a few hundred bytes.
+static constexpr size_t MANIFEST_MAX_BYTES = 1'024;
 
 // The Arduino core marks a freshly installed image as good the moment it
 // boots, which would waste the bootloader's rollback entirely. Taking the job
 // over here (this overrides the core's weak hook) lets tick() hold the
-// decision back until the panel has actually run for a while, so a firmware
+// decision back until the device has actually run for a while, so a firmware
 // that crashes on the way up is replaced by its predecessor instead.
 extern "C" bool verifyRollbackLater() { return true; }
 
@@ -49,20 +50,21 @@ static esp_err_t onHttpEvent(esp_http_client_event_t* event) {
 // GETs `url` into `out`. Redirects are followed (a release asset URL bounces
 // through one or two of them before landing on GitHub's storage host), and
 // every hop is verified against the built-in certificate bundle.
-static bool httpGet(const char* url, char* out, size_t outSize, char* error, size_t errorSize) {
+static bool httpGet(const OtaUpdater::Options& options, const char* userAgent, const char* url,
+                    char* out, size_t outSize, char* error, size_t errorSize) {
   Body body{out, outSize, 0};
   out[0] = '\0';
 
   esp_http_client_config_t config = {};
   config.url = url;
   config.method = HTTP_METHOD_GET;
-  config.timeout_ms = OTA_HTTP_TIMEOUT_MS;
-  config.buffer_size = OTA_HTTP_RX_BUFFER;
-  config.buffer_size_tx = OTA_HTTP_TX_BUFFER;
+  config.timeout_ms = options.httpTimeoutMs;
+  config.buffer_size = options.httpRxBuffer;
+  config.buffer_size_tx = options.httpTxBuffer;
   config.crt_bundle_attach = esp_crt_bundle_attach;
   config.event_handler = onHttpEvent;
   config.user_data = &body;
-  config.user_agent = "thermostat/" FIRMWARE_VERSION;
+  config.user_agent = userAgent;
 
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (client == nullptr) {
@@ -92,18 +94,20 @@ static bool httpGet(const char* url, char* out, size_t outSize, char* error, siz
 
 // ---------------------------------------------------------------------------
 
-void OtaUpdater::begin(OtaChannel channel) {
+void OtaUpdater::begin(OtaChannel channel, const Options& options) {
+  options_ = options;
   channel_ = channel;
   lock_ = xSemaphoreCreateMutex();
+  snprintf(userAgent_, sizeof(userAgent_), "thermostat/%s", options.firmwareVersion);
 
   const esp_partition_t* running = esp_ota_get_running_partition();
-  Serial.printf("Firmware: %s (%s channel), running from %s\n", FIRMWARE_VERSION,
+  Serial.printf("Firmware: %s (%s channel), running from %s\n", options_.firmwareVersion,
                 channelName(channel_), running != nullptr ? running->label : "?");
 
   esp_ota_img_states_t state;
   if (running != nullptr && esp_ota_get_state_partition(running, &state) == ESP_OK &&
       state == ESP_OTA_IMG_PENDING_VERIFY) {
-    Serial.printf("Firmware: just updated, on trial for %lus\n", OTA_SELF_TEST_MS / 1000);
+    Serial.printf("Firmware: just updated, on trial for %lus\n", options_.selfTestMs / 1000);
   } else {
     imageConfirmed_ = true;  // nothing to prove: this image was already accepted
   }
@@ -135,16 +139,16 @@ bool OtaUpdater::start(Job job) {
 
   // Once an image is installed, the only thing left to do is restart into it.
   // Installed is a hand-off rather than a resting place: loop() watches for it
-  // and restarts the panel. Letting anything else start here would publish
+  // and restarts the device. Letting anything else start here would publish
   // over it before loop() had seen it, leaving a finished update sitting on a
-  // panel that never reboots.
+  // device that never reboots.
   if (status().state == OtaState::Installed) return false;
 
   job_ = job;
   publish(job == Job::Check ? OtaState::Checking : OtaState::Downloading, status().version, "");
   running_.store(true);
 
-  if (xTaskCreate(runJob, "ota", OTA_TASK_STACK, this, OTA_TASK_PRIORITY, nullptr) != pdPASS) {
+  if (xTaskCreate(runJob, "ota", options_.taskStack, this, options_.taskPriority, nullptr) != pdPASS) {
     running_.store(false);
     publish(OtaState::Failed, status().version, "Not enough memory");
     return false;
@@ -164,12 +168,13 @@ void OtaUpdater::runJob(void* self) {
 }
 
 void OtaUpdater::doCheck() {
-  const char* url = channel_ == OtaChannel::Beta ? OTA_BETA_MANIFEST_URL : OTA_STABLE_MANIFEST_URL;
+  const char* url =
+      channel_ == OtaChannel::Beta ? options_.betaManifestUrl : options_.stableManifestUrl;
   Serial.printf("Update: checking %s\n", url);
 
-  char json[OTA_MANIFEST_MAX_BYTES];
+  char json[MANIFEST_MAX_BYTES];
   char error[sizeof(OtaStatus::message)];
-  if (!httpGet(url, json, sizeof(json), error, sizeof(error))) {
+  if (!httpGet(options_, userAgent_, url, json, sizeof(json), error, sizeof(error))) {
     Serial.printf("Update: check failed, %s\n", error);
     publish(OtaState::Failed, "", error);
     return;
@@ -191,11 +196,11 @@ void OtaUpdater::doCheck() {
 
   // Any version other than the one running counts, so switching to a channel
   // that's behind offers the way back down as readily as the way up.
-  if (strcmp(version, FIRMWARE_VERSION) == 0) {
+  if (strcmp(version, options_.firmwareVersion) == 0) {
     Serial.printf("Update: %s is the newest on the %s channel\n", version, channelName(channel_));
     publish(OtaState::UpToDate, version, "");
   } else {
-    Serial.printf("Update: %s available (running %s)\n", version, FIRMWARE_VERSION);
+    Serial.printf("Update: %s available (running %s)\n", version, options_.firmwareVersion);
     publish(OtaState::Available, version, "");
   }
 }
@@ -205,12 +210,12 @@ void OtaUpdater::doInstall() {
 
   esp_http_client_config_t http = {};
   http.url = downloadUrl_;
-  http.timeout_ms = OTA_HTTP_TIMEOUT_MS;
-  http.buffer_size = OTA_HTTP_RX_BUFFER;
-  http.buffer_size_tx = OTA_HTTP_TX_BUFFER;
+  http.timeout_ms = options_.httpTimeoutMs;
+  http.buffer_size = options_.httpRxBuffer;
+  http.buffer_size_tx = options_.httpTxBuffer;
   http.crt_bundle_attach = esp_crt_bundle_attach;
   http.keep_alive_enable = true;
-  http.user_agent = "thermostat/" FIRMWARE_VERSION;
+  http.user_agent = userAgent_;
 
   esp_https_ota_config_t config = {};
   config.http_config = &http;
@@ -264,11 +269,11 @@ void OtaUpdater::doInstall() {
 bool OtaUpdater::tick(unsigned long nowMs, bool networkReady) {
   // The bootloader is holding the previous firmware in reserve until this one
   // shows it can run and reach the network. Once it has, let it go.
-  if (!imageConfirmed_ && networkReady && nowMs >= OTA_SELF_TEST_MS) {
+  if (!imageConfirmed_ && networkReady && nowMs >= options_.selfTestMs) {
     imageConfirmed_ = true;
     if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
       Serial.printf("Firmware: %s passed its trial run and is now the one to keep\n",
-                    FIRMWARE_VERSION);
+                    options_.firmwareVersion);
     }
   }
 
@@ -278,13 +283,13 @@ bool OtaUpdater::tick(unsigned long nowMs, bool networkReady) {
   // measured from the moment there is one.
   if (!networkReady) lastCheckMs_ = nowMs;
   if (networkReady && !running_.load()) {
-    const unsigned long due = checkedOnce_ ? OTA_CHECK_INTERVAL_MS : OTA_FIRST_CHECK_DELAY_MS;
+    const unsigned long due = checkedOnce_ ? options_.checkIntervalMs : options_.firstCheckDelayMs;
     if (nowMs - lastCheckMs_ >= due) {
       // This runs even when an offer is already pending, so that a stale one
       // is replaced when a newer release appears. It costs nothing to re-offer
       // the same version: publish() writes an identical status, tick() sees no
       // change and nothing is redrawn. Skipping the check here instead left a
-      // panel showing the first release it ever saw, with no way to refresh it
+      // device showing the first release it ever saw, with no way to refresh it
       // short of changing channel and back.
       check(nowMs);
     }

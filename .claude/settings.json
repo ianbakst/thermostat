@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.waveshare.com)",
+      "WebSearch",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/124.0 Safari/537.36\" \"https://www.waveshare.com/wiki/1.9inch_Touch_LCD\" -o w19.html)",
+      "Bash(python3 -c \"import PIL; print\\(PIL.__version__\\)\")",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/537.36 Chrome/124.0 Safari/537.36\" \"https://www.waveshare.com/1.9inch-touch-lcd.htm\" -o prod.html)",
+      "Bash(curl -sL -A \"Mozilla/5.0\" \"https://files.waveshare.com/wiki/1.9inch_Touch_LCD/1.9inch_Touch_LCD_Schematic.pdf\" -o sch.pdf)",
+      "Bash(python3 -m venv v)",
+      "Bash(./v/bin/pip -q install pillow)",
+      "Bash(./v/bin/python -c \"import PIL;print\\('ok',PIL.__version__\\)\")",
+      "Bash(./v/bin/python -)",
+      "Bash(curl -sL -A \"Mozilla/5.0\" -e \"https://www.waveshare.com/1.9inch-touch-lcd.htm\" \"https://www.waveshare.com/img/devkit/LCD/1.9inch-Touch-LCD/1.9inch-Touch-LCD-details-7-2.jpg\" -o d7-2.jpg)",
+      "Bash(curl -sL -A \"Mozilla/5.0\" -e \"https://www.waveshare.com/1.9inch-touch-lcd.htm\" \"https://www.waveshare.com/img/devkit/LCD/1.9inch-Touch-LCD/1.9inch-Touch-LCD-details-2.jpg\" -o d2.jpg)",
+      "Bash(./v/bin/python -c ' *)",
+      "Bash(curl -sL -A \"Mozilla/5.0\" \"https://files.waveshare.com/wiki/1.9inch_Touch_LCD/1.9inch_Touch_LCD_ESP32.zip\" -o esp32.zip)",
+      "Bash(unzip -o -q esp32.zip -d esp32demo)"
+    ]
+  }
+}

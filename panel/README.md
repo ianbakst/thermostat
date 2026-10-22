@@ -179,10 +179,7 @@ A release carries three files for the panel, alongside the mini-split's
 | `panel-firmware.factory.bin` | bootloader + partitions + app, to flash a new panel at 0  |
 
 Every asset says which device it is for, so a panel can't be handed the
-mini-split's image. The same three files are published again under their old
-unprefixed names (`manifest.json`, `firmware.bin`, `firmware.factory.bin`),
-because panels installed before the repo held two firmwares still ask for
-those; they can be dropped once every panel has moved past that.
+mini-split's image.
 
 Panels look for the manifest at a URL that doesn't change with the version —
 `releases/latest/download/panel-manifest.json` for stable, which is GitHub
@@ -282,8 +279,6 @@ src/
   net/
     provisioning.h/.cpp   setup mode: the panel's own network and 3-step setup
     setup_pages.h/.cpp    the HTML those steps serve (rendering only)
-    ota_updater.h/.cpp    checks for and installs firmware over the air
-    ota_status.h          update snapshot + channel the UI can display
   storage/
     settings_store.h/.cpp what the panel was told about your home, saved in flash
   ui/
@@ -306,11 +301,13 @@ mini-split's controller.
 
 Shared with the mini-split firmware, one level up:
 
-- **`../shared/thermostat_common/`** — Wi-Fi, the MQTT client, and
-  `protocol/mini_split_protocol.h`, which holds the topics, the payload
-  vocabulary and the mode/fan/louvre enums. Those used to live in this
-  firmware's `src/net/` and `src/climate/climate.h`; the include paths didn't
-  change. See [`../shared/README.md`](../shared/README.md).
+- **`../shared/thermostat_common/`** — Wi-Fi, the MQTT client, the
+  over-the-air updater (`net/ota_updater.h`, which the controller uses too,
+  with its own manifest), and `protocol/mini_split_protocol.h`, which holds
+  the topics, the payload vocabulary and the mode/fan/louvre enums. Those
+  used to live in this firmware's `src/net/` and `src/climate/climate.h`; the
+  include paths didn't change. The update timings are still this firmware's,
+  in `include/config.h`. See [`../shared/README.md`](../shared/README.md).
 - **`../tools/`** — the version stamp and the manifest writer.
 - **`../.github/workflows/`** — CI builds both firmwares on every branch and
   pull request; release publishes an image for each device.

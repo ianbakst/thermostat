@@ -190,7 +190,19 @@ void setup() {
 
   settingsStore.begin();
   settings = settingsStore.load();
-  ota.begin(settings.otaChannel);
+  ota.begin(settings.otaChannel, {
+                                     .stableManifestUrl = OTA_STABLE_MANIFEST_URL,
+                                     .betaManifestUrl = OTA_BETA_MANIFEST_URL,
+                                     .firmwareVersion = FIRMWARE_VERSION,
+                                     .checkIntervalMs = OTA_CHECK_INTERVAL_MS,
+                                     .firstCheckDelayMs = OTA_FIRST_CHECK_DELAY_MS,
+                                     .selfTestMs = OTA_SELF_TEST_MS,
+                                     .httpTimeoutMs = OTA_HTTP_TIMEOUT_MS,
+                                     .httpRxBuffer = OTA_HTTP_RX_BUFFER,
+                                     .httpTxBuffer = OTA_HTTP_TX_BUFFER,
+                                     .taskStack = OTA_TASK_STACK,
+                                     .taskPriority = OTA_TASK_PRIORITY,
+                                 });
 
   display.begin(settings.brightness);
   ui.begin({setTargetTemp, setMode, setFanMode, setVane, setWideVane, startWifiSetup,

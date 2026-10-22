@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Writes the manifest.json a panel reads to find out what's available.
+"""Writes the manifest a device reads to find out what's available.
 
 The release workflow runs this after a build and attaches the result to the
-GitHub release, next to the firmware.bin it describes. A panel fetches only
-this file when it checks for updates (a few hundred bytes, rather than the
-release API's several KB), and downloads the firmware only if it decides to.
+GitHub release, next to the firmware it describes. A panel or a mini-split
+controller fetches only this file when it checks for updates (a few hundred
+bytes, rather than the release API's several KB), and downloads the firmware
+only if it decides to.
 
     tools/make_manifest.py \
         --version 1.2.0 --channel stable --tag v1.2.0 \
@@ -18,7 +19,7 @@ panel can never be offered the mini-split's image or the other way round.
 `--asset` is the name the image is uploaded under, which is what the manifest
 points at; it needn't match the local file's name.
 
-The panel uses `version` (compared against its own) and `url` (what to
+A device uses `version` (compared against its own) and `url` (what to
 download). The rest is for people: `sha256` and `size` are there to check a
 download by hand, and `commit` says exactly what was built.
 """
@@ -56,7 +57,7 @@ def main():
         "version": args.version,
         "channel": args.channel,
         # Absolute, and naming the tag rather than "latest": whichever release
-        # a panel found this manifest in, it downloads the firmware that was
+        # a device found this manifest in, it downloads the firmware that was
         # built alongside it, even if a newer one appears in between.
         "url": f"https://github.com/{args.repo}/releases/download/{args.tag}/{args.asset}",
         "size": len(image),

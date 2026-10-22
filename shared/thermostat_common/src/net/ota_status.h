@@ -2,10 +2,11 @@
 #include <cstdint>
 
 // A snapshot of where the firmware update stands, for display. Plain data with
-// no Arduino or ESP-IDF types, so the UI can show it without depending on the
-// update code (the same arrangement as net/wifi_status.h).
+// no Arduino or ESP-IDF types, so the panel's UI or the controller's page can
+// show it without depending on the update code (the same arrangement as
+// net/wifi_status.h).
 
-// Which releases this panel is offered. Saved in flash; picked on the settings
+// Which releases a device is offered. Saved in flash; picked on its settings
 // page. See the release workflow in .github/workflows/.
 enum class OtaChannel : uint8_t {
   Stable = 0,  // tagged releases off main
@@ -18,7 +19,7 @@ enum class OtaState : uint8_t {
   UpToDate,     // the release matches what's running
   Available,    // there's a different version to install
   Downloading,  // writing it into the spare app slot
-  Installed,    // written and verified; the panel restarts into it
+  Installed,    // written and verified; the device restarts into it
   Failed,       // see `message`
 };
 

@@ -68,13 +68,10 @@ named per device, because a panel must never be handed the unit's image:
 | `panel-manifest.json`        | version + download URL: all a panel fetches when it checks  |
 | `panel-firmware.bin`         | what a panel installs over the air                          |
 | `panel-firmware.factory.bin` | whole flash image, to flash a new panel over USB at 0       |
-| `unit-firmware.bin`          | the mini-split controller's app image                       |
+| `unit-manifest.json`         | the same for a mini-split controller                        |
+| `unit-firmware.bin`          | what a controller installs over the air                     |
 | `unit-firmware.factory.bin`  | its whole flash image, to flash a new controller board at 0 |
 
-Releases also carry `manifest.json`, `firmware.bin` and
-`firmware.factory.bin`: the same panel files under the names panels in the
-field still look for. They can go once every panel has installed a build that
-reads `panel-manifest.json`.
-
 Channels, versioning and how a panel decides to update are in
-[the panel's README](panel/README.md#updates).
+[the panel's README](panel/README.md#updates); the controller works the same
+way, from [its settings page](unit/README.md#firmware-updates).

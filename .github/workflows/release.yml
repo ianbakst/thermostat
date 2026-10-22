@@ -1,34 +1,30 @@
-# Publishes the firmware panels update themselves from, and the mini-split
-# controller image to upload by hand.
+# Publishes the firmware panels and mini-split controllers update themselves
+# from.
 #
 # Two channels, each tied to a place in the repo:
 #
 #   stable   a tag v1.2.3 (pushed from main). Becomes a normal GitHub
 #            release, which is what /releases/latest/ resolves to, which is
-#            where a panel on the stable channel looks.
+#            where a device on the stable channel looks.
 #   beta     any push to dev. Rebuilds one rolling prerelease tagged `beta`,
-#            so its download URLs never change and a panel on the beta
+#            so its download URLs never change and a device on the beta
 #            channel always finds the newest dev build there. Prereleases
-#            don't count as "latest", so this never reaches a stable panel.
+#            don't count as "latest", so this never reaches a stable device.
 #
 # Both firmwares are built from the same commit and carry the same version,
 # so a release is one set of images that belong together. Every asset says
 # which device it is for, because a panel must never be handed the
-# mini-split's image:
+# mini-split's image, or the other way round:
 #
 #   panel-manifest.json         version + download URL; the only thing a panel
 #                               fetches when it checks (tools/make_manifest.py)
 #   panel-firmware.bin          the app image, what a panel installs over the air
 #   panel-firmware.factory.bin  bootloader + partition table + app, for flashing
 #                               a new panel over USB at offset 0
-#   unit-firmware.bin           the mini-split controller's app image
+#   unit-manifest.json          the same for a mini-split controller
+#   unit-firmware.bin           its app image, what it installs over the air
 #   unit-firmware.factory.bin   its whole-flash image, for flashing a new
 #                               controller board over USB at offset 0
-#
-# The three unprefixed names are the same panel files under the names the
-# panel firmware used before this repo held two devices. Panels in the field
-# still look for those, so they stay until every panel has installed a build
-# that reads panel-manifest.json, and can then be dropped.
 name: Release
 
 on:
@@ -96,7 +92,7 @@ jobs:
       - run: pip install --upgrade platformio
 
       # tools/firmware_version.py reads FIRMWARE_VERSION and compiles it in,
-      # which is the version the panel compares against the manifest below.
+      # which is the version each device compares against its manifest below.
       # Both firmwares are stamped from the same variable, so a release's
       # images can't disagree about which build they are.
       - name: Build the panel firmware
@@ -109,9 +105,6 @@ jobs:
           FIRMWARE_VERSION: ${{ steps.version.outputs.version }}
         run: pio run -d unit
 
-      # Named assets, plus the unprefixed copies panels already in the field
-      # still ask for. Both manifests describe the same image under its two
-      # names, so whichever a panel reads, it downloads a file that exists.
       - name: Collect the release assets
         run: |
           set -euo pipefail
@@ -120,21 +113,20 @@ jobs:
           cp "${PANEL_BUILD_DIR}/firmware.factory.bin" release/panel-firmware.factory.bin
           cp "${UNIT_BUILD_DIR}/firmware.bin" release/unit-firmware.bin
           cp "${UNIT_BUILD_DIR}/firmware.factory.bin" release/unit-firmware.factory.bin
-          cp "${PANEL_BUILD_DIR}/firmware.bin" release/firmware.bin
-          cp "${PANEL_BUILD_DIR}/firmware.factory.bin" release/firmware.factory.bin
 
+          # manifest <image built> <name it's published as> <manifest to write>
           manifest() {
             python3 tools/make_manifest.py \
               --version "${{ steps.version.outputs.version }}" \
               --channel "${{ steps.version.outputs.channel }}" \
               --tag "${{ steps.version.outputs.tag }}" \
               --repo "${GITHUB_REPOSITORY}" \
-              --firmware "${PANEL_BUILD_DIR}/firmware.bin" \
-              --asset "$1" \
-              --out "$2"
+              --firmware "$1" \
+              --asset "$2" \
+              --out "$3"
           }
-          manifest panel-firmware.bin release/panel-manifest.json
-          manifest firmware.bin release/manifest.json  # legacy, see above
+          manifest "${PANEL_BUILD_DIR}/firmware.bin" panel-firmware.bin release/panel-manifest.json
+          manifest "${UNIT_BUILD_DIR}/firmware.bin" unit-firmware.bin release/unit-manifest.json
 
       # The beta release is replaced rather than added to, so its tag moves to
       # the commit just built and the old assets go with it. Panels checking

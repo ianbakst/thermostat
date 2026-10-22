@@ -3,6 +3,7 @@
 
 #include "climate/heat_pump.h"
 #include "net/mqtt_connection.h"
+#include "net/ota_updater.h"
 #include "net/page_login.h"
 #include "net/wifi_connection.h"
 #include "storage/settings_store.h"
@@ -11,13 +12,16 @@
 //
 //   /          the controls (net/control_page.h), which work through the
 //              control API (net/direct_api.h). Open to anyone on the network
-//   /settings  what it's doing, and the same settings form as setup mode
-//              (net/settings_form.h), so an installed unit can be checked on
-//              and reconfigured without opening it up. Needs the settings
-//              password (net/page_login.h)
+//   /settings  what it's doing, its firmware and updates, and the same
+//              settings form as setup mode (net/settings_form.h), so an
+//              installed unit can be checked on, updated and reconfigured
+//              without opening it up. Needs the settings password
+//              (net/page_login.h)
 //   /login     where that password is typed
 //
-// Firmware updates will go behind the password too.
+// Updates come only from this repo's releases (net/ota_updater.h): the page
+// can check for one, install the one found and switch channel, but there's
+// no way to upload firmware to it.
 //
 // A unit set up before there was a password has none, and its settings stay
 // shut until one is chosen in setup mode. Saved Wi-Fi and broker passwords
@@ -31,7 +35,8 @@ class WebPages {
   // main.cpp. Everything passed in is read whenever a page is loaded, so it
   // has to outlive this.
   void begin(SettingsStore& store, const UnitSettings& settings, const HeatPumpLink& heatPump,
-             const WifiConnection& wifi, const MqttConnection& mqtt, PageLogin& login);
+             const WifiConnection& wifi, const MqttConnection& mqtt, PageLogin& login,
+             OtaUpdater& ota);
 
   // Call from loop(). Serves whatever has been asked for since the last call.
   void tick();
@@ -43,8 +48,13 @@ class WebPages {
   void handleLoginPage();
   void handleLogin();
   void handleLogout();
+  void handleUpdateCheck();
+  void handleUpdateInstall();
+  void handleUpdateChannel();
 
   void showSettings(const UnitSettings& shown, const String& error);
+  String firmwareSection();
+  bool mayChange();
   void showLogin(const String& message);
   void showNoPassword();
   void redirect(const char* path);
@@ -59,5 +69,6 @@ class WebPages {
   const WifiConnection* wifi_ = nullptr;
   const MqttConnection* mqtt_ = nullptr;
   PageLogin* login_ = nullptr;
+  OtaUpdater* ota_ = nullptr;
   bool started_ = false;
 };

@@ -121,9 +121,36 @@ constexpr float DEFAULT_TEMP_STEP = 1;
 // Firmware updates (OTA)
 // ---------------------------------------------------------------------------
 // What this build calls itself, injected by tools/firmware_version.py from the
-// git tag (or from the version the release workflow made up). A macro, not
+// git tag (or from the version the release workflow made up). The updater
+// compares it with the version in the channel's manifest. A macro, not
 // constexpr: a build with no git history to describe falls back to the value
 // below, and it gets pasted into string literals.
 #ifndef FIRMWARE_VERSION
 #define FIRMWARE_VERSION "dev"
 #endif
+
+// Where each channel says what it has, the same two releases the panel reads
+// (see panel/include/config.h), but this device's own manifest, which points
+// at unit-firmware.bin. Only these are ever installed: nothing can be
+// uploaded to the controller.
+constexpr const char* OTA_STABLE_MANIFEST_URL =
+    "https://github.com/ianbakst/thermostat/releases/latest/download/unit-manifest.json";
+constexpr const char* OTA_BETA_MANIFEST_URL =
+    "https://github.com/ianbakst/thermostat/releases/download/beta/unit-manifest.json";
+
+// It checks by itself, and says what it found on the settings page. It never
+// installs by itself: a unit restarting into new firmware in the middle of a
+// cold night should be somebody's decision.
+constexpr unsigned long OTA_CHECK_INTERVAL_MS = 24UL * 60 * 60 * 1'000;  // once a day
+constexpr unsigned long OTA_FIRST_CHECK_DELAY_MS = 60'000;  // after the network has settled
+
+// A freshly installed image is on trial: the bootloader keeps the firmware it
+// replaced until the new one has run this long with Wi-Fi up. One that
+// crashes on the way up, can't join the network, or is restarted before then
+// is rolled back at the next boot. Wi-Fi rather than the heat pump is the
+// test, so a board on the bench can be updated too.
+constexpr unsigned long OTA_SELF_TEST_MS = 60'000;
+
+// How often the settings page reloads itself while a check or a download is
+// running, to show how it's going.
+constexpr unsigned OTA_PAGE_REFRESH_S = 3;

@@ -14,6 +14,7 @@ static const char* KEY_MIN_TEMP = "min_temp";
 static const char* KEY_MAX_TEMP = "max_temp";
 static const char* KEY_TEMP_STEP = "temp_step";
 static const char* KEY_HA_UNIQUE_ID = "ha_uniq_id";
+static const char* KEY_OTA_CHANNEL = "ota_channel";
 
 void SettingsStore::begin() { prefs_.begin(NAMESPACE, false /* read-write */); }
 
@@ -52,4 +53,14 @@ void SettingsStore::save(const UnitSettings& settings) {
   prefs_.putFloat(KEY_MIN_TEMP, settings.minTemp);
   prefs_.putFloat(KEY_MAX_TEMP, settings.maxTemp);
   prefs_.putFloat(KEY_TEMP_STEP, settings.tempStep);
+}
+
+OtaChannel SettingsStore::loadOtaChannel() {
+  return prefs_.getUChar(KEY_OTA_CHANNEL, 0) == static_cast<uint8_t>(OtaChannel::Beta)
+             ? OtaChannel::Beta
+             : OtaChannel::Stable;
+}
+
+void SettingsStore::saveOtaChannel(OtaChannel channel) {
+  prefs_.putUChar(KEY_OTA_CHANNEL, static_cast<uint8_t>(channel));
 }

@@ -161,15 +161,10 @@ constexpr unsigned long OTA_CHECK_INTERVAL_MS = 24UL * 60 * 60 * 1'000;  // once
 constexpr unsigned long OTA_FIRST_CHECK_DELAY_MS = 60'000;   // after the network has settled
 constexpr int OTA_HTTP_TIMEOUT_MS = 15'000;
 
-// A release asset URL is answered with a redirect to GitHub's storage host,
-// and the signed URL in that Location header — then in the request that
-// follows it — runs to about a kilobyte. esp_http_client defaults both
-// buffers to 512 bytes, which the redirect doesn't fit in: it gives up with
-// "Out of buffer" rather than anything that names the real problem. These
-// apply to the download as well, which takes the same road.
+// Big enough for GitHub's redirect to its storage host, whose Location header
+// runs to about a kilobyte; see OtaUpdater::Options in ../shared for why.
 constexpr int OTA_HTTP_RX_BUFFER = 4'096;
 constexpr int OTA_HTTP_TX_BUFFER = 2'048;
-constexpr size_t OTA_MANIFEST_MAX_BYTES = 1'024;             // a manifest is a few hundred bytes
 
 // A freshly installed image is on trial: the bootloader keeps the firmware it
 // replaced until the new one has run this long with the network up. One that
