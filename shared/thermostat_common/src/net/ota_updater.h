@@ -62,16 +62,17 @@ class OtaUpdater {
 
   void begin(OtaChannel channel, const Options& options);
 
-  OtaChannel channel() const { return channel_; }
+  OtaChannel channel() const { return channel_.load(); }
 
   // Which releases to look at. Changing it clears what the last check found.
   void setChannel(OtaChannel channel);
 
-  // Ask now, from the settings page's button. Ignored while a check or a
-  // download is already running. `nowMs` is the loop's clock for this pass
-  // (see main.cpp): every check, however it was asked for, pushes the next
-  // automatic one a full interval out, so a manual check can't be chased by a
-  // scheduled one seconds later.
+  // Ask now, from the settings page's button. One asked for while a check is
+  // already running waits for it and runs next, so a check straight after a
+  // change of channel isn't lost. Ignored while a download is running.
+  // `nowMs` is the loop's clock for this pass (see main.cpp): every check,
+  // however it was asked for, pushes the next automatic one a full interval
+  // out, so a manual check can't be chased by a scheduled one seconds later.
   void check(unsigned long nowMs);
 
   // Download and install the version the last check found. Ignored unless
@@ -112,7 +113,10 @@ class OtaUpdater {
   Options options_;
   char userAgent_[48] = "";
   Job job_ = Job::Check;
-  OtaChannel channel_ = OtaChannel::Stable;
+  // Set by loop(), read by the check job, which drops its answer if the
+  // channel changed while it was out asking.
+  std::atomic<OtaChannel> channel_{OtaChannel::Stable};
+  bool checkPending_ = false;  // asked for while a check was running
 
   // Written by the check job, read by the install job that follows it. Only
   // one job ever runs at a time, so they can't overlap.

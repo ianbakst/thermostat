@@ -102,7 +102,7 @@ void OtaUpdater::begin(OtaChannel channel, const Options& options) {
 
   const esp_partition_t* running = esp_ota_get_running_partition();
   Serial.printf("Firmware: %s (%s channel), running from %s\n", options_.firmwareVersion,
-                channelName(channel_), running != nullptr ? running->label : "?");
+                channelName(channel), running != nullptr ? running->label : "?");
 
   esp_ota_img_states_t state;
   if (running != nullptr && esp_ota_get_state_partition(running, &state) == ESP_OK &&
@@ -122,6 +122,10 @@ void OtaUpdater::setChannel(OtaChannel channel) {
 }
 
 void OtaUpdater::check(unsigned long nowMs) {
+  if (running_.load() && job_ == Job::Check) {
+    checkPending_ = true;  // tick() starts it once this one is done
+    return;
+  }
   if (!start(Job::Check)) return;
   lastCheckMs_ = nowMs;
   checkedOnce_ = true;
@@ -168,13 +172,24 @@ void OtaUpdater::runJob(void* self) {
 }
 
 void OtaUpdater::doCheck() {
+  const OtaChannel channel = channel_.load();
   const char* url =
-      channel_ == OtaChannel::Beta ? options_.betaManifestUrl : options_.stableManifestUrl;
+      channel == OtaChannel::Beta ? options_.betaManifestUrl : options_.stableManifestUrl;
   Serial.printf("Update: checking %s\n", url);
 
   char json[MANIFEST_MAX_BYTES];
   char error[sizeof(OtaStatus::message)];
-  if (!httpGet(options_, userAgent_, url, json, sizeof(json), error, sizeof(error))) {
+  const bool fetched = httpGet(options_, userAgent_, url, json, sizeof(json), error, sizeof(error));
+
+  // If the channel changed while this was out asking, its answer is about
+  // the old one and goes nowhere: the check asked for with the change runs
+  // next. Showing it would put the old channel's news under the new name.
+  if (channel_.load() != channel) {
+    Serial.println("Update: the channel changed during the check, so its answer is dropped");
+    return;
+  }
+
+  if (!fetched) {
     Serial.printf("Update: check failed, %s\n", error);
     publish(OtaState::Failed, "", error);
     return;
@@ -197,7 +212,7 @@ void OtaUpdater::doCheck() {
   // Any version other than the one running counts, so switching to a channel
   // that's behind offers the way back down as readily as the way up.
   if (strcmp(version, options_.firmwareVersion) == 0) {
-    Serial.printf("Update: %s is the newest on the %s channel\n", version, channelName(channel_));
+    Serial.printf("Update: %s is the newest on the %s channel\n", version, channelName(channel));
     publish(OtaState::UpToDate, version, "");
   } else {
     Serial.printf("Update: %s available (running %s)\n", version, options_.firmwareVersion);
@@ -284,7 +299,11 @@ bool OtaUpdater::tick(unsigned long nowMs, bool networkReady) {
   if (!networkReady) lastCheckMs_ = nowMs;
   if (networkReady && !running_.load()) {
     const unsigned long due = checkedOnce_ ? options_.checkIntervalMs : options_.firstCheckDelayMs;
-    if (nowMs - lastCheckMs_ >= due) {
+    if (checkPending_) {
+      // Asked for while the last one was running: see check().
+      checkPending_ = false;
+      check(nowMs);
+    } else if (nowMs - lastCheckMs_ >= due) {
       // This runs even when an offer is already pending, so that a stale one
       // is replaced when a newer release appears. It costs nothing to re-offer
       // the same version: publish() writes an identical status, tick() sees no

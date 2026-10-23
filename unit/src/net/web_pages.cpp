@@ -218,9 +218,12 @@ void WebPages::handleSettings() {
   server_.sendHeader("Set-Cookie", PageLogin::cookieFor(login));
 
   // While a check or a download runs, the page keeps reloading to follow it.
+  // The address is spelled out, without a #fragment: told to go to the page
+  // it's already on plus a fragment, a browser only scrolls, and the page
+  // would sit at "Checking" for good.
   const OtaState state = ota_->status().state;
   if (state == OtaState::Checking || state == OtaState::Downloading) {
-    server_.sendHeader("Refresh", String(OTA_PAGE_REFRESH_S));
+    server_.sendHeader("Refresh", String(OTA_PAGE_REFRESH_S) + "; url=/settings");
   }
   showSettings(*settings_, "");
 }
@@ -274,7 +277,7 @@ String WebPages::firmwareSection() {
   const bool busy = status.state == OtaState::Checking || status.state == OtaState::Downloading ||
                     status.state == OtaState::Installed;
 
-  String out = "<h2 id=firmware>Firmware</h2><dl>";
+  String out = "<h2>Firmware</h2><dl>";
   row(out, "Running", FIRMWARE_VERSION);
   row(out, "Channel", channel == OtaChannel::Beta
                           ? "beta: a build of every change to dev, for trying things out"
@@ -302,7 +305,7 @@ String WebPages::firmwareSection() {
 void WebPages::handleUpdateCheck() {
   if (!mayChange()) return;
   ota_->check(millis());
-  redirect("/settings#firmware");
+  redirect("/settings");
 }
 
 void WebPages::handleUpdateInstall() {
@@ -312,7 +315,7 @@ void WebPages::handleUpdateInstall() {
   Serial.printf("Update: installing %s, asked for by %s\n", ota_->status().version,
                 server_.client().remoteIP().toString().c_str());
   ota_->install();
-  redirect("/settings#firmware");
+  redirect("/settings");
 }
 
 void WebPages::handleUpdateChannel() {
@@ -325,7 +328,7 @@ void WebPages::handleUpdateChannel() {
     Serial.printf("Update: now on the %s channel\n", channelName(channel));
   }
   ota_->check(millis());
-  redirect("/settings#firmware");
+  redirect("/settings");
 }
 
 // The settings page, with the form filled in from `shown`: the saved
